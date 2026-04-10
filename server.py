@@ -240,11 +240,7 @@ async def _generate_single_image(
 ) -> str:
     """Generate a single image and return as data URI."""
     style_suffix = PHOTOREALISM_SUFFIX if style_mode == "classic" else MODERN_STYLE_SUFFIX
-    
-    # Embed aspect ratio and size in the prompt since generate_content
-    # doesn't support imageConfig directly in the Python SDK
-    aspect_instruction = f"Generate this image in {aspect_ratio} aspect ratio format."
-    full_prompt = f"{aspect_instruction}\n\n{prompt}\n\n{style_suffix}"
+    full_prompt = f"{prompt}\n\n{style_suffix}"
 
     parts = []
     if reference_image:
@@ -252,10 +248,13 @@ async def _generate_single_image(
     parts.append(types.Part(text=full_prompt))
 
     response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash-exp",
+        model="gemini-2.5-flash-image",
         contents=types.Content(parts=parts),
         config=types.GenerateContentConfig(
             response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(
+                aspect_ratio=aspect_ratio,
+            ),
         ),
     )
 
@@ -341,7 +340,7 @@ async def api_edit_image(req: EditImageRequest):
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash-image",
             contents=types.Content(parts=parts),
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],

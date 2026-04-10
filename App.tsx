@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { AppData, GenerationState, AspectRatio } from './types';
+import { AppData, GenerationState, AspectRatio, Metaphor } from './types';
 import InputSection from './components/InputSection';
 import MetaphorSelection from './components/MetaphorSelection';
 import ImageWorkspace from './components/ImageWorkspace';
 import ErrorDisplay, { AppError } from './components/ErrorDisplay';
-import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
+import ProjectHistory from './components/ProjectHistory';
+import { generateMetaphors, generateMultiFormatImages, saveImageReferences, extractAppError } from './services/geminiService';
+import { Clock } from 'lucide-react';
 
 // ─── Tyrannus AI Media Logo ──────────────────────────────────────────────────
 
@@ -70,6 +72,12 @@ const App: React.FC = () => {
   // Track last action for retry
   const lastActionRef = useRef<'brainstorm' | 'generate' | null>(null);
 
+  // Project history panel
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Current project ID (from Supabase)
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+
   // ─── Error Handling ──────────────────────────────────────────────────────
 
   const handleError = (error: any) => {
@@ -97,6 +105,27 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, step: 'input' }));
   };
 
+  // ─── Load Project from History ────────────────────────────────────────────
+
+  const handleLoadProject = (partialData: Partial<AppData>, metaphors: Metaphor[]) => {
+    setData(prev => ({
+      ...prev,
+      ...partialData,
+      metaphors,
+      selectedMetaphorId: metaphors.length > 0 ? metaphors[0].id : null,
+    }));
+
+    // If there are images, go to result; if metaphors, go to brainstorm
+    if (partialData.generatedImages && Object.keys(partialData.generatedImages).length > 0) {
+      setState(prev => ({ ...prev, step: 'result', error: null }));
+    } else if (metaphors.length > 0) {
+      setState(prev => ({ ...prev, step: 'brainstorm', error: null }));
+    } else {
+      setState(prev => ({ ...prev, step: 'input', error: null }));
+    }
+    clearError();
+  };
+
   // ─── Brainstorm ──────────────────────────────────────────────────────────
 
   const handleBrainstorm = useCallback(async () => {
@@ -106,14 +135,15 @@ const App: React.FC = () => {
     clearError();
     setState(prev => ({ ...prev, isGenerating: true, error: null }));
     try {
-      const suggestions = await generateMetaphors(
+      const result = await generateMetaphors(
         data.verse,
         data.theme,
         data.userVision,
         data.styleMode,
         data.referenceImage
       );
-      setData(prev => ({ ...prev, metaphors: suggestions }));
+      setData(prev => ({ ...prev, metaphors: result.metaphors }));
+      setCurrentProjectId(result.projectId);
       setState(prev => ({ ...prev, step: 'brainstorm', isGenerating: false }));
     } catch (error: any) {
       handleError(error);
@@ -147,19 +177,26 @@ const App: React.FC = () => {
     }
 
     try {
-      const images = await generateMultiFormatImages(
+      const result = await generateMultiFormatImages(
         selected.visualPrompt,
         data.imageSize,
         requests,
         data.styleMode,
         data.referenceImage
       );
-      setData(prev => ({ ...prev, generatedImages: images }));
+      setData(prev => ({ ...prev, generatedImages: result.images }));
       setState(prev => ({ ...prev, step: 'result', isGenerating: false }));
+
+      // Save image references to Supabase (non-blocking)
+      if (currentProjectId && result.storedUrls && Object.keys(result.storedUrls).length > 0) {
+        saveImageReferences(currentProjectId, result.storedUrls, data.selectedMetaphorId).catch(e => {
+          console.warn('Failed to save image references:', e);
+        });
+      }
     } catch (error: any) {
       handleError(error);
     }
-  }, [data.metaphors, data.selectedMetaphorId, data.imageSize, data.selectedFormats, data.customRatio, data.styleMode, data.referenceImage]);
+  }, [data.metaphors, data.selectedMetaphorId, data.imageSize, data.selectedFormats, data.customRatio, data.styleMode, data.referenceImage, currentProjectId]);
 
   // ─── Render Content ──────────────────────────────────────────────────────
 
@@ -211,9 +248,18 @@ const App: React.FC = () => {
           <TyrannusLogo />
         </div>
 
-        {/* Status */}
+        {/* Status + History */}
         <div className="hidden md:flex flex-col items-end gap-2">
           <div className="flex items-center gap-4">
+            {/* History Button */}
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-zinc-50 rounded-full border border-zinc-200 hover:border-black transition-all cursor-pointer"
+            >
+              <Clock size={12} className="text-zinc-500" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-black">Historie</span>
+            </button>
+
             <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-full border border-zinc-100">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse"></div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">System Ready</span>
@@ -235,6 +281,13 @@ const App: React.FC = () => {
         )}
         {renderContent()}
       </main>
+
+      {/* Project History Panel */}
+      <ProjectHistory
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onLoadProject={handleLoadProject}
+      />
 
     </div>
   );

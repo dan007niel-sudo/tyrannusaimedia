@@ -10,6 +10,7 @@ import base64
 import asyncio
 import mimetypes
 import traceback
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -132,7 +133,7 @@ def check_safety_block(response) -> None:
                 safety_info = f" (Kategorien: {', '.join(blocked_cats)})"
         raise Exception(f"SAFETY_BLOCKED: Inhalt durch Sicherheitsfilter blockiert{safety_info}.")
 
-# ─── Configuration ────────────────────────────────────────────────────────────
+# ─── Configuration ──────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -140,6 +141,24 @@ if not GEMINI_API_KEY:
     print("⚠️  WARNING: GEMINI_API_KEY not set. API endpoints will fail.")
 
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+# ─── Supabase Configuration ───────────────────────────────────────────────────
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+
+supabase_client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        from supabase import create_client
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase connected.")
+    except Exception as e:
+        print(f"⚠️  Supabase init failed: {e}")
+else:
+    print("⚠️  SUPABASE_URL/SUPABASE_KEY not set. Persistence disabled.")
+
+IMAGE_BUCKET = "generated-images"
 
 # ─── Constants (from original constants.ts) ───────────────────────────────────
 
@@ -200,6 +219,7 @@ class GenerateImagesRequest(BaseModel):
     requests: list[FormatRequest]
     styleMode: str = "classic"
     referenceImage: str | None = None
+    projectId: str | None = None
 
 
 class EditImageRequest(BaseModel):
@@ -333,7 +353,35 @@ async def api_brainstorm(req: BrainstormRequest):
         if not text:
             raise HTTPException(status_code=500, detail="Keine Metaphern generiert.")
         
-        return JSONResponse(content=json.loads(text))
+        metaphors_data = json.loads(text)
+
+        # Persist to Supabase if available
+        project_id = None
+        if supabase_client:
+            try:
+                # Create project
+                project_result = supabase_client.table("projects").insert({
+                    "verse": req.verse,
+                    "theme": req.theme,
+                    "user_vision": req.userVision,
+                    "style_mode": req.styleMode,
+                }).execute()
+                project_id = project_result.data[0]["id"] if project_result.data else None
+
+                # Save metaphors
+                if project_id:
+                    for m in metaphors_data:
+                        supabase_client.table("metaphors").insert({
+                            "project_id": project_id,
+                            "title": m.get("title", ""),
+                            "description": m.get("description", ""),
+                            "visual_prompt": m.get("visualPrompt", ""),
+                        }).execute()
+                    print(f"✅ Project {project_id} saved with {len(metaphors_data)} metaphors.")
+            except Exception as e:
+                print(f"⚠️  Supabase save failed (non-blocking): {e}")
+
+        return JSONResponse(content={"metaphors": metaphors_data, "projectId": project_id})
 
     except HTTPException:
         raise
@@ -450,7 +498,31 @@ async def api_generate_images(req: GenerateImagesRequest):
         first_err = next(iter(errors_by_type.values()))
         raise HTTPException(status_code=500, detail=json.dumps(first_err))
 
-    return JSONResponse(content=results)
+    # Upload successful images to Supabase Storage
+    stored_urls = {}
+    if supabase_client:
+        for fmt_key, data_uri in results.items():
+            if data_uri is None:
+                continue
+            try:
+                mime_type, raw_bytes = parse_data_uri(data_uri)
+                ext = "png" if "png" in mime_type else "jpg"
+                file_name = f"{uuid.uuid4().hex}.{ext}"
+                storage_path = f"{file_name}"
+
+                supabase_client.storage.from_(IMAGE_BUCKET).upload(
+                    path=storage_path,
+                    file=raw_bytes,
+                    file_options={"content-type": mime_type},
+                )
+
+                public_url = supabase_client.storage.from_(IMAGE_BUCKET).get_public_url(storage_path)
+                stored_urls[fmt_key] = public_url
+                print(f"✅ Image uploaded: {storage_path}")
+            except Exception as e:
+                print(f"⚠️  Storage upload failed for {fmt_key}: {e}")
+
+    return JSONResponse(content={"images": results, "storedUrls": stored_urls})
 
 
 @app.post("/api/edit-image")
@@ -512,6 +584,125 @@ async def api_edit_image(req: EditImageRequest):
         raise classify_gemini_error(e)
 
 
+# ─── API: Save Image References (after client confirms) ────────────────────
+
+class SaveImagesRequest(BaseModel):
+    projectId: str
+    metaphorId: str | None = None
+    images: dict  # { "feed": "public_url", ... }
+
+
+@app.post("/api/save-images")
+async def api_save_images(req: SaveImagesRequest):
+    """Save generated image references to the database."""
+    if not supabase_client:
+        return JSONResponse(content={"saved": False, "reason": "Persistence disabled"})
+
+    try:
+        for fmt_key, public_url in req.images.items():
+            if not public_url:
+                continue
+            # Determine aspect ratio from format key
+            ratio_map = {"feed": "3:4", "story": "9:16", "banner": "16:9", "custom": "1:1"}
+            supabase_client.table("generated_images").insert({
+                "project_id": req.projectId,
+                "metaphor_id": req.metaphorId,
+                "format_key": fmt_key,
+                "aspect_ratio": ratio_map.get(fmt_key, "1:1"),
+                "storage_path": public_url.split("/")[-1] if public_url else "",
+                "public_url": public_url,
+            }).execute()
+        return JSONResponse(content={"saved": True})
+    except Exception as e:
+        print(f"⚠️  Save images failed: {e}")
+        return JSONResponse(content={"saved": False, "reason": str(e)})
+
+
+# ─── API: Project History ────────────────────────────────────────────
+
+@app.get("/api/projects")
+async def api_list_projects():
+    """List all projects, newest first."""
+    if not supabase_client:
+        return JSONResponse(content=[])
+
+    try:
+        result = supabase_client.table("projects") \
+            .select("id, verse, theme, style_mode, created_at") \
+            .order("created_at", desc=True) \
+            .limit(50) \
+            .execute()
+        return JSONResponse(content=result.data or [])
+    except Exception as e:
+        print(f"⚠️  List projects failed: {e}")
+        return JSONResponse(content=[])
+
+
+@app.get("/api/projects/{project_id}")
+async def api_get_project(project_id: str):
+    """Get a single project with its metaphors and images."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Persistence disabled")
+
+    try:
+        # Get project
+        project = supabase_client.table("projects") \
+            .select("*") \
+            .eq("id", project_id) \
+            .single() \
+            .execute()
+
+        # Get metaphors
+        metaphors = supabase_client.table("metaphors") \
+            .select("*") \
+            .eq("project_id", project_id) \
+            .execute()
+
+        # Get images
+        images = supabase_client.table("generated_images") \
+            .select("*") \
+            .eq("project_id", project_id) \
+            .execute()
+
+        return JSONResponse(content={
+            "project": project.data,
+            "metaphors": metaphors.data or [],
+            "images": images.data or [],
+        })
+    except Exception as e:
+        print(f"⚠️  Get project failed: {e}")
+        raise HTTPException(status_code=404, detail="Projekt nicht gefunden.")
+
+
+@app.delete("/api/projects/{project_id}")
+async def api_delete_project(project_id: str):
+    """Delete a project and all related data (CASCADE handles metaphors + images)."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Persistence disabled")
+
+    try:
+        # Delete images from storage first
+        images = supabase_client.table("generated_images") \
+            .select("storage_path") \
+            .eq("project_id", project_id) \
+            .execute()
+
+        if images.data:
+            paths = [img["storage_path"] for img in images.data if img.get("storage_path")]
+            if paths:
+                try:
+                    supabase_client.storage.from_(IMAGE_BUCKET).remove(paths)
+                except Exception as e:
+                    print(f"⚠️  Storage cleanup failed: {e}")
+
+        # Delete project (CASCADE deletes metaphors + images)
+        supabase_client.table("projects").delete().eq("id", project_id).execute()
+        return JSONResponse(content={"deleted": True})
+    except Exception as e:
+        print(f"⚠️  Delete project failed: {e}")
+        raise HTTPException(status_code=500, detail="Löschen fehlgeschlagen.")
+
+
 @app.get("/api/health")
 async def health():
     """Health check for Render."""
@@ -519,10 +710,11 @@ async def health():
         "status": "ok",
         "service": "Tyrannus AI Media",
         "api_configured": client is not None,
+        "persistence_enabled": supabase_client is not None,
     }
 
 
-# ─── Static File Serving (Production) ────────────────────────────────────────
+# ─── Static File Serving (Production) ────────────────────────────────────
 
 DIST_DIR = Path(__file__).parent / "dist"
 

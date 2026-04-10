@@ -152,7 +152,7 @@ export const generateMetaphors = async (
   userVision: string,
   styleMode: "classic" | "modern" = "classic",
   referenceImage: string | null = null
-): Promise<Metaphor[]> => {
+): Promise<{ metaphors: Metaphor[]; projectId: string | null }> => {
   const response = await fetchWithTimeout("/api/brainstorm", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -165,7 +165,8 @@ export const generateMetaphors = async (
     }),
   }, BRAINSTORM_TIMEOUT_MS);
 
-  return handleResponse(response);
+  const data = await handleResponse(response);
+  return { metaphors: data.metaphors, projectId: data.projectId || null };
 };
 
 // ─── Multi-Format Image Generation ──────────────────────────────────────────
@@ -176,7 +177,7 @@ export const generateMultiFormatImages = async (
   requests: { key: string; ratio: AspectRatio }[],
   styleMode: "classic" | "modern" = "classic",
   referenceImage: string | null = null
-): Promise<GeneratedImages> => {
+): Promise<{ images: GeneratedImages; storedUrls: Record<string, string> }> => {
   const response = await fetchWithTimeout("/api/generate-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -189,7 +190,8 @@ export const generateMultiFormatImages = async (
     }),
   }, IMAGE_GEN_TIMEOUT_MS);
 
-  return handleResponse(response);
+  const data = await handleResponse(response);
+  return { images: data.images, storedUrls: data.storedUrls || {} };
 };
 
 // ─── Image Editing ───────────────────────────────────────────────────────────
@@ -209,4 +211,64 @@ export const editImage = async (
 
   const data = await handleResponse(response);
   return data.image;
+};
+
+// ─── Project History ──────────────────────────────────────────────────────
+
+export interface ProjectSummary {
+  id: string;
+  verse: string;
+  theme: string;
+  style_mode: string;
+  created_at: string;
+}
+
+export interface ProjectDetail {
+  project: {
+    id: string;
+    verse: string;
+    theme: string;
+    user_vision: string;
+    style_mode: string;
+    created_at: string;
+  };
+  metaphors: {
+    id: string;
+    title: string;
+    description: string;
+    visual_prompt: string;
+    is_selected: boolean;
+  }[];
+  images: {
+    id: string;
+    format_key: string;
+    aspect_ratio: string;
+    public_url: string;
+  }[];
+}
+
+export const fetchProjects = async (): Promise<ProjectSummary[]> => {
+  const response = await fetchWithTimeout("/api/projects", {}, 10_000);
+  return handleResponse(response);
+};
+
+export const fetchProject = async (projectId: string): Promise<ProjectDetail> => {
+  const response = await fetchWithTimeout(`/api/projects/${projectId}`, {}, 10_000);
+  return handleResponse(response);
+};
+
+export const deleteProject = async (projectId: string): Promise<void> => {
+  await fetchWithTimeout(`/api/projects/${projectId}`, { method: "DELETE" }, 10_000);
+};
+
+export const saveImageReferences = async (
+  projectId: string,
+  images: Record<string, string>,
+  metaphorId?: string | null,
+): Promise<void> => {
+  await fetchWithTimeout("/api/save-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, metaphorId, images }),
+  }, 10_000);
 };

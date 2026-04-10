@@ -1,0 +1,24 @@
+{
+  "name": "tyrannus-ai-media",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "KI-gestütztes visuelles Studio für cineastische Bildgenerierung — Schule von Tyrannus",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react-dom": "^19.2.3",
+    "react": "^19.2.3",
+    "lucide-react": "^0.562.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

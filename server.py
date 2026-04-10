@@ -9,6 +9,7 @@ import json
 import base64
 import asyncio
 import mimetypes
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -18,6 +19,118 @@ from pydantic import BaseModel
 
 from google import genai
 from google.genai import types
+
+# ─── Error Classification ─────────────────────────────────────────────────────
+
+IMAGE_GEN_TIMEOUT_SECONDS = 120  # 2 minutes max per image
+
+def classify_gemini_error(error: Exception) -> HTTPException:
+    """
+    Classify a Gemini API error into a user-friendly HTTP response.
+    Returns an HTTPException with:
+      - Appropriate HTTP status code
+      - JSON detail with 'message', 'errorType', and 'retryable' fields
+    """
+    msg = str(error)
+    error_lower = msg.lower()
+
+    # Permission / Auth errors
+    if any(kw in error_lower for kw in ["api key not valid", "permission_denied", "403", "unauthorized", "401"]):
+        return HTTPException(
+            status_code=403,
+            detail=json.dumps({
+                "message": "API-Zugriff verweigert. Der API-Key ist ungültig oder hat keine Berechtigung.",
+                "errorType": "PERMISSION_DENIED",
+                "retryable": False,
+            })
+        )
+
+    # Rate limiting
+    if any(kw in error_lower for kw in ["429", "resource_exhausted", "rate limit", "quota"]):
+        return HTTPException(
+            status_code=429,
+            detail=json.dumps({
+                "message": "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut.",
+                "errorType": "RATE_LIMITED",
+                "retryable": True,
+            })
+        )
+
+    # Timeout
+    if any(kw in error_lower for kw in ["504", "deadline_exceeded", "timeout", "timed out"]):
+        return HTTPException(
+            status_code=504,
+            detail=json.dumps({
+                "message": "Die Generierung hat zu lange gedauert. Bitte versuche es erneut oder verwende eine niedrigere Auflösung.",
+                "errorType": "TIMEOUT",
+                "retryable": True,
+            })
+        )
+
+    # Content safety block
+    if any(kw in error_lower for kw in ["safety", "blocked", "content_filter", "prohibited", "harm"]):
+        return HTTPException(
+            status_code=422,
+            detail=json.dumps({
+                "message": "Dieses Bild konnte nicht generiert werden — der Inhalt wurde aus Sicherheitsgründen blockiert. Bitte passe den Prompt an.",
+                "errorType": "CONTENT_BLOCKED",
+                "retryable": False,
+            })
+        )
+
+    # Model not found
+    if any(kw in error_lower for kw in ["404", "not_found", "model"]):
+        return HTTPException(
+            status_code=502,
+            detail=json.dumps({
+                "message": "Das KI-Modell ist vorübergehend nicht verfügbar. Bitte versuche es später erneut.",
+                "errorType": "MODEL_UNAVAILABLE",
+                "retryable": True,
+            })
+        )
+
+    # Server errors (500, 503)
+    if any(kw in error_lower for kw in ["500", "503", "internal", "unavailable"]):
+        return HTTPException(
+            status_code=502,
+            detail=json.dumps({
+                "message": "Der KI-Server ist vorübergehend nicht erreichbar. Bitte versuche es in einer Minute erneut.",
+                "errorType": "SERVER_ERROR",
+                "retryable": True,
+            })
+        )
+
+    # Generic fallback
+    return HTTPException(
+        status_code=500,
+        detail=json.dumps({
+            "message": f"Ein unerwarteter Fehler ist aufgetreten: {msg[:200]}",
+            "errorType": "UNKNOWN",
+            "retryable": True,
+        })
+    )
+
+
+def check_safety_block(response) -> None:
+    """
+    Check if a Gemini response was blocked due to safety filters.
+    Raises an exception with a descriptive message if blocked.
+    """
+    if not response.candidates:
+        raise Exception("SAFETY_BLOCKED: Keine Antwort erhalten — möglicherweise durch Inhaltsfilter blockiert.")
+
+    candidate = response.candidates[0]
+    finish_reason = getattr(candidate, 'finish_reason', None)
+
+    if finish_reason and str(finish_reason).upper() in ('SAFETY', 'BLOCKED', 'CONTENT_FILTER'):
+        # Try to extract which safety category triggered
+        safety_info = ""
+        ratings = getattr(candidate, 'safety_ratings', None)
+        if ratings:
+            blocked_cats = [str(r.category) for r in ratings if getattr(r, 'blocked', False)]
+            if blocked_cats:
+                safety_info = f" (Kategorien: {', '.join(blocked_cats)})"
+        raise Exception(f"SAFETY_BLOCKED: Inhalt durch Sicherheitsfilter blockiert{safety_info}.")
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -225,10 +338,9 @@ async def api_brainstorm(req: BrainstormRequest):
     except HTTPException:
         raise
     except Exception as e:
-        error_msg = str(e)
-        if "API key not valid" in error_msg or "403" in error_msg or "PERMISSION_DENIED" in error_msg:
-            raise HTTPException(status_code=403, detail="API Key ungültig oder keine Berechtigung.")
-        raise HTTPException(status_code=500, detail=f"Brainstorming fehlgeschlagen: {error_msg}")
+        print(f"⚠️  Brainstorm error: {e}")
+        traceback.print_exc()
+        raise classify_gemini_error(e)
 
 
 async def _generate_single_image(
@@ -238,7 +350,7 @@ async def _generate_single_image(
     style_mode: str,
     reference_image: str | None,
 ) -> str:
-    """Generate a single image and return as data URI."""
+    """Generate a single image and return as data URI. Includes timeout and safety checks."""
     style_suffix = PHOTOREALISM_SUFFIX if style_mode == "classic" else MODERN_STYLE_SUFFIX
     full_prompt = f"{prompt}\n\n{style_suffix}"
 
@@ -247,16 +359,26 @@ async def _generate_single_image(
         parts.append(build_reference_part(reference_image))
     parts.append(types.Part(text=full_prompt))
 
-    response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash-image",
-        contents=types.Content(parts=parts),
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            image_config=types.ImageConfig(
-                aspect_ratio=aspect_ratio,
+    # Wrap in timeout to prevent hanging requests
+    try:
+        response = await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=types.Content(parts=parts),
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                    ),
+                ),
             ),
-        ),
-    )
+            timeout=IMAGE_GEN_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise Exception(f"TIMEOUT: Bildgenerierung für {aspect_ratio} hat nach {IMAGE_GEN_TIMEOUT_SECONDS}s nicht geantwortet.")
+
+    # Check for safety blocks
+    check_safety_block(response)
 
     # Extract generated image from response
     if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
@@ -294,30 +416,39 @@ async def api_generate_images(req: GenerateImagesRequest):
     raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     results = {}
+    errors_by_type = {}  # Track error types for smart error messages
     all_failed = True
-    permission_error = False
 
     for fmt, result in zip(req.requests, raw_results):
         if isinstance(result, Exception):
             error_msg = str(result)
             print(f"⚠️  Image generation failed for {fmt.key}: {error_msg}")
-            
-            if "403" in error_msg or "PERMISSION_DENIED" in error_msg or "permission" in error_msg.lower():
-                permission_error = True
-            
+
+            # Classify the error
+            classified = classify_gemini_error(result)
+            error_detail = json.loads(classified.detail)
+            error_type = error_detail.get("errorType", "UNKNOWN")
+            errors_by_type[error_type] = error_detail
+
             results[fmt.key] = None
         else:
             results[fmt.key] = result
             all_failed = False
 
-    if permission_error:
-        raise HTTPException(
-            status_code=403,
-            detail="ZUGRIFF VERWEIGERT. Für die Bildgenerierung wird ein API Key benötigt, der mit einem BEZAHLTEN Google Cloud Projekt verknüpft ist (Billing Enabled)."
-        )
-
-    if all_failed:
-        raise HTTPException(status_code=500, detail="Alle Bildgenerierungen sind fehlgeschlagen.")
+    if all_failed and errors_by_type:
+        # Return the most specific/important error
+        # Priority: PERMISSION > CONTENT_BLOCKED > RATE_LIMITED > TIMEOUT > others
+        priority = ["PERMISSION_DENIED", "CONTENT_BLOCKED", "RATE_LIMITED", "TIMEOUT", "MODEL_UNAVAILABLE", "SERVER_ERROR"]
+        for prio_type in priority:
+            if prio_type in errors_by_type:
+                err = errors_by_type[prio_type]
+                raise HTTPException(
+                    status_code=classify_gemini_error(Exception(prio_type.lower())).status_code,
+                    detail=json.dumps(err)
+                )
+        # Generic fallback
+        first_err = next(iter(errors_by_type.values()))
+        raise HTTPException(status_code=500, detail=json.dumps(first_err))
 
     return JSONResponse(content=results)
 
@@ -339,13 +470,19 @@ async def api_edit_image(req: EditImageRequest):
     ]
 
     try:
-        response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash-image",
-            contents=types.Content(parts=parts),
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
+        response = await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=types.Content(parts=parts),
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                ),
             ),
+            timeout=IMAGE_GEN_TIMEOUT_SECONDS,
         )
+
+        # Check for safety blocks
+        check_safety_block(response)
 
         for part in response.candidates[0].content.parts:
             if part.inline_data:
@@ -355,15 +492,24 @@ async def api_edit_image(req: EditImageRequest):
                 )
                 return JSONResponse(content={"image": data_uri})
 
-        raise HTTPException(status_code=500, detail="Bearbeitung fehlgeschlagen — kein Bild in Antwort.")
+        raise HTTPException(status_code=500, detail=json.dumps({
+            "message": "Bearbeitung fehlgeschlagen — kein Bild in Antwort.",
+            "errorType": "UNKNOWN",
+            "retryable": True,
+        }))
 
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail=json.dumps({
+            "message": "Die Bildbearbeitung hat zu lange gedauert. Bitte versuche es erneut.",
+            "errorType": "TIMEOUT",
+            "retryable": True,
+        }))
     except HTTPException:
         raise
     except Exception as e:
-        error_msg = str(e)
-        if "API key not valid" in error_msg or "403" in error_msg:
-            raise HTTPException(status_code=403, detail="API Key ungültig.")
-        raise HTTPException(status_code=500, detail=f"Bildbearbeitung fehlgeschlagen: {error_msg}")
+        print(f"⚠️  Edit error: {e}")
+        traceback.print_exc()
+        raise classify_gemini_error(e)
 
 
 @app.get("/api/health")

@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { AppData, GenerationState, AspectRatio } from './types';
 import InputSection from './components/InputSection';
 import MetaphorSelection from './components/MetaphorSelection';
 import ImageWorkspace from './components/ImageWorkspace';
-import { generateMetaphors, generateMultiFormatImages } from './services/geminiService';
-import { Zap } from 'lucide-react';
+import ErrorDisplay, { AppError } from './components/ErrorDisplay';
+import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
 
 // ─── Tyrannus AI Media Logo ──────────────────────────────────────────────────
 
@@ -64,12 +64,37 @@ const App: React.FC = () => {
     error: null,
   });
 
+  // Structured error state
+  const [appError, setAppError] = useState<AppError | null>(null);
+
+  // Track last action for retry
+  const lastActionRef = useRef<'brainstorm' | 'generate' | null>(null);
+
   // ─── Error Handling ──────────────────────────────────────────────────────
 
   const handleError = (error: any) => {
-    console.error(error);
-    const msg = error.message || "Ein unbekannter Fehler ist aufgetreten.";
-    setState(prev => ({ ...prev, isGenerating: false, error: msg }));
+    console.error('App error:', error);
+    const structured = extractAppError(error);
+    setAppError(structured);
+    setState(prev => ({ ...prev, isGenerating: false, error: null }));
+  };
+
+  const clearError = () => setAppError(null);
+
+  // ─── Retry ───────────────────────────────────────────────────────────────
+
+  const handleRetry = useCallback(() => {
+    clearError();
+    if (lastActionRef.current === 'brainstorm') {
+      handleBrainstorm();
+    } else if (lastActionRef.current === 'generate') {
+      handleGenerateImage();
+    }
+  }, []);
+
+  const handleAdjustPrompt = () => {
+    clearError();
+    setState(prev => ({ ...prev, step: 'input' }));
   };
 
   // ─── Brainstorm ──────────────────────────────────────────────────────────
@@ -77,6 +102,8 @@ const App: React.FC = () => {
   const handleBrainstorm = useCallback(async () => {
     if (!data.verse || !data.theme) return;
 
+    lastActionRef.current = 'brainstorm';
+    clearError();
     setState(prev => ({ ...prev, isGenerating: true, error: null }));
     try {
       const suggestions = await generateMetaphors(
@@ -99,6 +126,8 @@ const App: React.FC = () => {
     const selected = data.metaphors.find(m => m.id === data.selectedMetaphorId);
     if (!selected) return;
 
+    lastActionRef.current = 'generate';
+    clearError();
     setState(prev => ({ ...prev, isGenerating: true, error: null }));
 
     const requests: { key: string; ratio: AspectRatio }[] = [];
@@ -108,7 +137,12 @@ const App: React.FC = () => {
     if (data.selectedFormats.custom) requests.push({ key: 'custom', ratio: data.customRatio });
 
     if (requests.length === 0) {
-      setState(prev => ({ ...prev, isGenerating: false, error: "Bitte wählen Sie mindestens ein Format." }));
+      setAppError({
+        message: 'Bitte wähle mindestens ein Format aus.',
+        errorType: 'UNKNOWN',
+        retryable: false,
+      });
+      setState(prev => ({ ...prev, isGenerating: false }));
       return;
     }
 
@@ -190,14 +224,14 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12 flex flex-col items-center justify-center flex-grow">
-        {state.error && (
-          <div className="w-full max-w-xl bg-red-50 border border-red-200 text-red-900 p-6 rounded-sm mb-8 text-center text-sm font-medium animate-in slide-in-from-top-2 shadow-sm flex flex-col items-center gap-4">
-            <div className="flex items-center justify-center gap-2 font-bold uppercase tracking-widest">
-              <Zap size={14} />
-              Warnung
-            </div>
-            {state.error}
-          </div>
+        {/* Structured Error Display */}
+        {appError && (
+          <ErrorDisplay
+            error={appError}
+            onRetry={appError.retryable ? handleRetry : undefined}
+            onAdjustPrompt={appError.errorType === 'CONTENT_BLOCKED' ? handleAdjustPrompt : undefined}
+            onDismiss={clearError}
+          />
         )}
         {renderContent()}
       </main>

@@ -4,7 +4,7 @@
 
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #ffffff;
+  background-color: #fbfaf7;
   color: #000000;
   -webkit-font-smoothing: antialiased;
 }
@@ -27,5 +27,23 @@ body {
 }
 
 .font-serif-logo {
-  font-family: 'Playfair Display', serif;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.font-brand-display {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.font-brand-condensed {
+  font-family: 'Bebas Neue', 'Montserrat', sans-serif;
+}
+
+.brand-roof-shadow {
+  filter: drop-shadow(20px 18px 0 rgba(31, 58, 46, 0.08));
+}
+
+.brand-surface {
+  background:
+    linear-gradient(90deg, rgba(31, 58, 46, 0.045) 0 1px, transparent 1px) 0 0 / 84px 84px,
+    #fbfaf7;
 }

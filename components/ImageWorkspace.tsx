@@ -68,7 +68,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
     <div className="w-full max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-12 animate-in fade-in zoom-in-95 duration-700 lg:h-[calc(100vh-160px)]">
       
       {/* Left Column: Image Display */}
-      <div className="flex-1 bg-zinc-50 flex flex-col relative overflow-hidden group border border-zinc-100 p-8">
+      <div className="flex-1 bg-white/72 flex flex-col relative overflow-hidden group border border-black/10 p-8">
         {failedKeys.length > 0 && (
           <div className="mb-5 border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 rounded-sm">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-1">
@@ -82,15 +82,15 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
         
         {/* Toggle Controls - Dynamic */}
         <div className="flex justify-center mb-6 overflow-x-auto">
-            <div className="bg-white border border-zinc-200 p-1 rounded-full flex gap-1 shadow-sm">
+            <div className="bg-[#fbfaf7] border border-black/10 p-1 flex gap-1 shadow-sm">
                 {availableKeys.map(key => {
                     const label = getLabel(key);
                     return (
                         <button
                             key={key}
                             onClick={() => setActiveKey(key)}
-                            className={`px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all whitespace-nowrap ${
-                                activeKey === key ? 'bg-black text-white' : 'text-zinc-400 hover:text-black'
+                            className={`px-6 py-2 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all whitespace-nowrap ${
+                                activeKey === key ? 'bg-black text-white' : 'text-zinc-500 hover:text-black'
                             }`}
                         >
                             {label.icon} {label.text}
@@ -106,7 +106,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
             <img 
                 src={currentImage} 
                 alt="Generated Result" 
-                className={`object-contain shadow-2xl shadow-zinc-200 transition-all duration-500 ${
+                className={`object-contain shadow-2xl shadow-[#1F3A2E]/10 transition-all duration-500 ${
                     activeKey === 'story' ? 'max-h-full h-full' : 'max-h-[85%] w-auto'
                 }`}
             />
@@ -127,7 +127,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
         
         {/* Back Button */}
         <div className="absolute top-6 left-6">
-            <button onClick={onBack} className="bg-white text-black p-3 hover:bg-black hover:text-white transition-all shadow-lg border border-zinc-100 rounded-sm">
+            <button onClick={onBack} className="bg-white text-black p-3 hover:bg-black hover:text-white transition-all shadow-lg border border-black/10">
                 <ChevronLeft size={20} />
             </button>
         </div>
@@ -137,9 +137,9 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
       <div className="w-full lg:w-96 flex flex-col gap-8 h-full">
         
         {/* Info Card */}
-        <div className="border-b border-zinc-100 pb-8">
-            <h3 className="text-2xl font-bold text-black mb-2 tracking-tight">{data.verse}</h3>
-            <p className="text-zinc-500 font-light italic">{data.theme}</p>
+        <div className="border-y border-black py-6">
+            <h3 className="font-brand-display text-2xl font-black text-black mb-2 tracking-[-0.03em]">{data.verse}</h3>
+            <p className="text-[#1F3A2E] font-medium italic">{data.theme}</p>
         </div>
 
         {/* Refinement / Edit Section */}
@@ -155,7 +155,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
                 placeholder="Beschreibe die Änderung (z.B. 'Mehr Licht', 'Hintergrund dunkler')..."
-                className="w-full bg-white border border-zinc-200 p-4 text-sm text-black placeholder-zinc-300 resize-none h-32 focus:border-black outline-none mb-4 font-light transition-colors"
+                className="w-full bg-white/78 border border-black/10 p-4 text-sm text-black placeholder-zinc-300 resize-none h-32 focus:border-black outline-none mb-4 font-light transition-colors"
             />
 
             {editError && (
@@ -169,17 +169,17 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
             <button
                 onClick={handleEdit}
                 disabled={!editPrompt || isEditing || !currentImage}
-                className="w-full bg-white border border-zinc-200 hover:border-black text-black text-xs font-bold uppercase tracking-widest py-4 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-white/72 border border-black/10 hover:border-black text-black text-xs font-bold uppercase tracking-widest py-4 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {isEditing ? <RefreshCw className="animate-spin" size={14} /> : "Änderung Anwenden"}
             </button>
         </div>
 
         {/* Action Buttons */}
-        <div className="pt-8 border-t border-zinc-100">
+        <div className="pt-8 border-t border-black/10">
             <button
                 onClick={handleDownload}
-                className="w-full bg-black hover:bg-zinc-800 text-white font-bold py-5 shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-95"
+                className="w-full bg-black hover:bg-[#1F3A2E] text-white font-bold py-5 shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-95"
             >
                 <Download size={18} /> <span className="uppercase tracking-widest text-xs">Download {getLabel(activeKey).text}</span>
             </button>

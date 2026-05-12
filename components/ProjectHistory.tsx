@@ -167,28 +167,28 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 animate-in fade-in duration-200"
+        className="fixed inset-0 bg-black/35 backdrop-blur-sm z-50 animate-in fade-in duration-200"
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-[#fbfaf7] shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300 border-l border-black">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-zinc-100">
+        <div className="flex items-center justify-between p-6 border-b border-black/10">
           <div className="flex items-center gap-3">
             <Clock size={18} className="text-zinc-400" />
-            <h2 className="text-lg font-bold tracking-tight">Projekt-Historie</h2>
+            <h2 className="font-brand-display text-lg font-black tracking-[-0.03em]">Projekt-Historie</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-zinc-100 transition-colors rounded-sm"
+            className="p-2 hover:bg-white transition-colors"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Auth */}
-        <form onSubmit={handleSaveToken} className="p-4 border-b border-zinc-100 bg-zinc-50/60">
+        <form onSubmit={handleSaveToken} className="p-4 border-b border-black/10 bg-white/55">
           <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
             <KeyRound size={12} />
             Historie-Token
@@ -199,11 +199,11 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
               value={tokenDraft}
               onChange={(e) => setTokenDraft(e.target.value)}
               placeholder="Admin-Token eingeben"
-              className="min-w-0 flex-1 bg-white border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-black rounded-sm"
+              className="min-w-0 flex-1 bg-white border border-black/10 px-3 py-2 text-sm outline-none focus:border-black"
             />
             <button
               type="submit"
-              className="bg-black text-white px-4 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-zinc-800 transition-colors rounded-sm"
+              className="bg-black text-white px-4 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#1F3A2E] transition-colors"
             >
               Laden
             </button>
@@ -248,7 +248,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
               <div
                 key={project.id}
                 onClick={() => handleLoadProject(project.id)}
-                className="group relative bg-white border border-zinc-100 hover:border-black p-5 cursor-pointer transition-all hover:shadow-md"
+                className="group relative bg-white/78 border border-black/10 hover:border-black p-5 cursor-pointer transition-all hover:shadow-md"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
@@ -267,9 +267,9 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
                 <div className="flex items-center justify-between mt-3">
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-sm ${
-                      project.style_mode === 'modern' 
-                        ? 'bg-blue-50 text-blue-600' 
-                        : 'bg-amber-50 text-amber-600'
+                      project.style_mode === 'modern'
+                        ? 'bg-[#1F3A2E] text-white'
+                        : 'bg-[#D6C3A3]/35 text-[#1F3A2E]'
                     }`}>
                       {project.style_mode === 'modern' ? 'Modern' : 'Klassisch'}
                     </span>

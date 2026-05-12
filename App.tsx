@@ -11,29 +11,14 @@ import { Clock } from 'lucide-react';
 // ─── Tyrannus AI Media Logo ──────────────────────────────────────────────────
 
 const TyrannusLogo = () => (
-  <div className="flex flex-col items-center justify-center text-black select-none pointer-events-none">
-    {/* House Icon */}
-    <svg viewBox="0 0 100 60" className="h-8 w-auto fill-black mb-2">
-      <path d="M50 5 L10 35 L10 55 L90 55 L90 35 L50 5 Z M60 12 L60 25 L75 25 L75 24 L60 12 Z" />
-      <rect x="58" y="10" width="8" height="20" className="fill-black" />
+  <div className="flex items-center gap-4 text-black select-none pointer-events-none">
+    <svg viewBox="0 0 320 110" className="brand-roof-shadow h-10 w-auto fill-black" aria-hidden="true">
+      <path d="M16 96 L103 6 L135 47 L205 47 L205 21 L231 15 L257 21 L257 47 L289 50 L314 77 L173 80 L118 80 L103 61 L48 96 Z" />
     </svg>
-    
-    {/* Main Text */}
-    <div className="flex flex-col items-center leading-none">
-      <h1 className="font-serif-logo text-2xl font-bold tracking-[0.15em] mb-1">SCHULE</h1>
-      <div className="text-[0.6rem] tracking-[0.4em] font-light uppercase text-zinc-600 mb-2">Von Tyrannus</div>
-    </div>
-    
-    {/* Separator */}
-    <div className="flex items-center gap-2 opacity-50 mb-1">
-      <div className="h-[1px] w-12 bg-black"></div>
-      <div className="w-1 h-1 rotate-45 bg-black"></div>
-      <div className="h-[1px] w-12 bg-black"></div>
-    </div>
-    
-    {/* Slogan */}
-    <div className="text-[0.5rem] tracking-[0.2em] uppercase font-bold text-zinc-900">
-      AI Media Studio
+    <div className="leading-[0.88] uppercase font-brand-display">
+      <div className="text-[1.05rem] md:text-[1.2rem] font-extrabold tracking-[-0.03em]">Schule von</div>
+      <div className="text-[1.45rem] md:text-[1.65rem] font-black tracking-[-0.04em]">Tyrannus</div>
+      <div className="mt-2 h-[2px] w-full bg-[#1F3A2E]" />
     </div>
   </div>
 );
@@ -241,10 +226,10 @@ const App: React.FC = () => {
   // ─── App Shell ───────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-white text-black selection:bg-black selection:text-white flex flex-col">
+    <div className="brand-surface min-h-screen text-black selection:bg-black selection:text-white flex flex-col">
 
       {/* Header */}
-      <header className="px-8 py-8 border-b border-zinc-100 flex flex-col md:flex-row justify-between items-center bg-white/95 backdrop-blur-sm sticky top-0 z-50 gap-6">
+      <header className="px-5 md:px-10 py-6 border-b border-black/10 flex flex-col md:flex-row justify-between items-center bg-[#fbfaf7]/95 backdrop-blur-sm sticky top-0 z-50 gap-6">
         
         {/* Logo */}
         <div className="flex-shrink-0 scale-90 origin-left">
@@ -253,26 +238,26 @@ const App: React.FC = () => {
 
         {/* Status + History */}
         <div className="hidden md:flex flex-col items-end gap-2">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {/* History Button */}
             <button
               onClick={() => setHistoryOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-zinc-50 rounded-full border border-zinc-200 hover:border-black transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/70 hover:bg-white border border-black/10 hover:border-black transition-all cursor-pointer"
             >
-              <Clock size={12} className="text-zinc-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-black">Historie</span>
+              <Clock size={12} className="text-[#1F3A2E]" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 hover:text-black">Historie</span>
             </button>
 
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-full border border-zinc-100">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse"></div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">System Ready</span>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
+              <div className="w-1.5 h-1.5 bg-[#D6C3A3] animate-pulse"></div>
+              <span className="text-[10px] font-bold uppercase tracking-widest">System Ready</span>
             </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12 flex flex-col items-center justify-center flex-grow">
+      <main className="container mx-auto px-4 py-12 md:py-16 flex flex-col items-center justify-center flex-grow">
         {/* Structured Error Display */}
         {appError && (
           <ErrorDisplay

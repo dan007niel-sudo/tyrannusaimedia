@@ -27,16 +27,16 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700 pb-20">
-      
+
       {/* Header Nav */}
-      <div className="flex items-center justify-between border-b border-zinc-100 pb-6">
+      <div className="flex items-center justify-between border-y border-black py-5">
         <button onClick={onBack} className="text-zinc-400 hover:text-black flex items-center gap-2 transition-colors uppercase tracking-widest text-xs font-bold">
           <ChevronLeft size={16} /> Zurück
         </button>
         <div className="text-center">
-          <h2 className="text-xl font-bold tracking-widest uppercase text-black">Visuelle Richtung</h2>
+          <h2 className="font-brand-display text-2xl md:text-3xl font-black tracking-[-0.03em] uppercase text-black">Visuelle Richtung</h2>
         </div>
-        <div className="w-20" /> 
+        <div className="w-20" />
       </div>
 
       {/* Grid */}
@@ -49,14 +49,14 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
               onClick={() => handleSelect(metaphor.id)}
               className={`
                 relative p-8 border cursor-pointer transition-all duration-300 h-full flex flex-col group
-                ${isSelected 
-                  ? 'bg-black text-white border-black shadow-2xl scale-[1.02]' 
-                  : 'bg-white text-black border-zinc-200 hover:border-black hover:shadow-lg'
+                ${isSelected
+                  ? 'bg-black text-white border-black shadow-2xl scale-[1.02]'
+                  : 'bg-white/76 text-black border-black/10 hover:border-black hover:shadow-lg'
                 }
               `}
             >
               <div className="flex justify-between items-start mb-6">
-                <h3 className={`text-2xl font-bold tracking-tight ${isSelected ? 'text-white' : 'text-black'}`}>
+                <h3 className={`font-brand-display text-2xl font-black tracking-[-0.03em] ${isSelected ? 'text-white' : 'text-black'}`}>
                     {metaphor.title}
                 </h3>
                 {isSelected && <Check size={24} className="text-white" />}
@@ -64,7 +64,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
               <p className={`text-sm leading-relaxed mb-8 flex-grow font-light ${isSelected ? 'text-zinc-300' : 'text-zinc-600'}`}>
                 {metaphor.description}
               </p>
-              <div className={`mt-auto pt-6 border-t ${isSelected ? 'border-zinc-800' : 'border-zinc-100'}`}>
+              <div className={`mt-auto pt-6 border-t ${isSelected ? 'border-zinc-800' : 'border-[#D6C3A3]'}`}>
                  <p className={`text-[10px] uppercase tracking-widest font-bold mb-3 ${isSelected ? 'text-zinc-500' : 'text-zinc-400'}`}>
                     Visual Prompt (Intern)
                  </p>
@@ -78,8 +78,8 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
       </div>
 
       {/* Configuration & Controls */}
-      <div className="flex flex-col items-center justify-center space-y-8 pt-8 border-t border-zinc-100">
-         
+      <div className="flex flex-col items-center justify-center space-y-8 pt-8 border-t border-black/10">
+
          <div className="w-full max-w-3xl space-y-6">
             <div className="flex items-center justify-center gap-2 text-black mb-4">
                 <Settings2 size={16} />
@@ -93,10 +93,10 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
                         <button
                             key={size}
                             onClick={() => setData(prev => ({...prev, imageSize: size}))}
-                            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all rounded-sm border ${
-                                data.imageSize === size 
-                                ? 'bg-black text-white border-black' 
-                                : 'bg-white text-zinc-400 border-zinc-200 hover:border-black hover:text-black'
+                            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all border ${
+                                data.imageSize === size
+                                ? 'bg-[#1F3A2E] text-white border-[#1F3A2E]'
+                                : 'bg-white/72 text-zinc-500 border-black/10 hover:border-black hover:text-black'
                             }`}
                         >
                             Auflösung: {size}
@@ -105,51 +105,51 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
                 </div>
 
                 {/* Format Toggles */}
-                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.feed ? 'border-black bg-zinc-50' : 'border-zinc-100'}`}>
+                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.feed ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
                     <span className="text-xs font-bold uppercase tracking-widest">Feed (3:4)</span>
-                    <input 
-                        type="checkbox" 
-                        checked={data.selectedFormats.feed} 
+                    <input
+                        type="checkbox"
+                        checked={data.selectedFormats.feed}
                         onChange={() => toggleFormat('feed')}
                         className="accent-black h-4 w-4"
                     />
                 </label>
 
-                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.story ? 'border-black bg-zinc-50' : 'border-zinc-100'}`}>
+                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.story ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
                     <span className="text-xs font-bold uppercase tracking-widest">Story (9:16)</span>
-                    <input 
-                        type="checkbox" 
-                        checked={data.selectedFormats.story} 
+                    <input
+                        type="checkbox"
+                        checked={data.selectedFormats.story}
                         onChange={() => toggleFormat('story')}
                         className="accent-black h-4 w-4"
                     />
                 </label>
 
-                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.banner ? 'border-black bg-zinc-50' : 'border-zinc-100'}`}>
+                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.banner ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
                     <span className="text-xs font-bold uppercase tracking-widest">Banner (16:9)</span>
-                    <input 
-                        type="checkbox" 
-                        checked={data.selectedFormats.banner} 
+                    <input
+                        type="checkbox"
+                        checked={data.selectedFormats.banner}
                         onChange={() => toggleFormat('banner')}
                         className="accent-black h-4 w-4"
                     />
                 </label>
 
-                <div className={`flex flex-col p-3 border transition-all ${data.selectedFormats.custom ? 'border-black bg-zinc-50' : 'border-zinc-100'}`}>
+                <div className={`flex flex-col p-3 border transition-all ${data.selectedFormats.custom ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
                     <label className="flex items-center justify-between mb-2 cursor-pointer">
                         <span className="text-xs font-bold uppercase tracking-widest">Benutzerdefiniert</span>
-                        <input 
-                            type="checkbox" 
-                            checked={data.selectedFormats.custom} 
+                        <input
+                            type="checkbox"
+                            checked={data.selectedFormats.custom}
                             onChange={() => toggleFormat('custom')}
                             className="accent-black h-4 w-4"
                         />
                     </label>
-                    <select 
+                    <select
                         disabled={!data.selectedFormats.custom}
                         value={data.customRatio}
                         onChange={(e) => setData(prev => ({...prev, customRatio: e.target.value as AspectRatio}))}
-                        className="w-full text-xs border border-zinc-200 p-2 bg-white outline-none focus:border-black disabled:opacity-50"
+                        className="w-full text-xs border border-black/10 p-2 bg-white outline-none focus:border-black disabled:opacity-50"
                     >
                         <option value="1:1">1:1 (Quadrat)</option>
                         <option value="4:3">4:3 (Standard)</option>
@@ -164,7 +164,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
         <button
           onClick={onGenerate}
           disabled={!data.selectedMetaphorId || isLoading || (!data.selectedFormats.feed && !data.selectedFormats.story && !data.selectedFormats.banner && !data.selectedFormats.custom)}
-          className="w-full max-w-sm bg-black hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300 text-white font-bold py-5 px-8 rounded-full transition-all flex items-center justify-center gap-3 shadow-2xl mt-8"
+          className="w-full max-w-sm bg-black hover:bg-[#1F3A2E] disabled:bg-zinc-100 disabled:text-zinc-300 text-white font-bold py-5 px-8 transition-all flex items-center justify-center gap-3 shadow-2xl mt-8"
         >
           {isLoading ? (
              <><Loader2 className="animate-spin" /> <span className="uppercase tracking-widest text-xs">Produziere Assets...</span></>

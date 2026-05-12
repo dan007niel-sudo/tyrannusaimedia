@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppData } from '../types';
 import { Download, RefreshCw, Wand2, ChevronLeft, AlertCircle, Smartphone, Layout, Monitor, Square } from 'lucide-react';
 import { editImage, extractAppError } from '../services/geminiService';
@@ -22,6 +22,12 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
   const currentImage = data.generatedImages[activeKey];
   const currentGenerationError = data.generatedImageErrors[activeKey];
   const failedKeys = Object.keys(data.generatedImageErrors || {});
+
+  useEffect(() => {
+    if (!availableKeys.includes(activeKey)) {
+      setActiveKey(availableKeys[0] || 'feed');
+    }
+  }, [availableKeys.join('|'), activeKey]);
 
   const handleDownload = () => {
     if (!currentImage) return;

@@ -6,7 +6,7 @@ import { AppData, Metaphor } from '../types';
 interface ProjectHistoryProps {
   isOpen: boolean;
   onClose: () => void;
-  onLoadProject: (data: Partial<AppData>, metaphors: Metaphor[]) => void;
+  onLoadProject: (projectId: string, data: Partial<AppData>, metaphors: Metaphor[]) => void;
 }
 
 const HISTORY_TOKEN_STORAGE_KEY = 'tyrannus-history-token';
@@ -117,6 +117,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
       }
 
       onLoadProject(
+        detail.project.id,
         {
           verse: detail.project.verse,
           theme: detail.project.theme,

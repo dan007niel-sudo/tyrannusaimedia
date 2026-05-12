@@ -5,7 +5,7 @@ import MetaphorSelection from './components/MetaphorSelection';
 import ImageWorkspace from './components/ImageWorkspace';
 import ErrorDisplay, { AppError } from './components/ErrorDisplay';
 import ProjectHistory from './components/ProjectHistory';
-import { generateMetaphors, generateMultiFormatImages, saveImageReferences, extractAppError } from './services/geminiService';
+import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
 import { Clock } from 'lucide-react';
 
 // ─── Tyrannus AI Media Logo ──────────────────────────────────────────────────
@@ -93,7 +93,7 @@ const App: React.FC = () => {
 
   // ─── Load Project from History ────────────────────────────────────────────
 
-  const handleLoadProject = (partialData: Partial<AppData>, metaphors: Metaphor[]) => {
+  const handleLoadProject = (projectId: string, partialData: Partial<AppData>, metaphors: Metaphor[]) => {
     setData(prev => ({
       ...prev,
       ...partialData,
@@ -101,6 +101,7 @@ const App: React.FC = () => {
       selectedMetaphorId: metaphors.length > 0 ? metaphors[0].id : null,
       generatedImageErrors: {},
     }));
+    setCurrentProjectId(projectId);
 
     // If there are images, go to result; if metaphors, go to brainstorm
     if (partialData.generatedImages && Object.keys(partialData.generatedImages).length > 0) {
@@ -169,18 +170,12 @@ const App: React.FC = () => {
         data.imageSize,
         requests,
         data.styleMode,
-        data.referenceImage
+        data.referenceImage,
+        currentProjectId,
+        data.selectedMetaphorId,
       );
       setData(prev => ({ ...prev, generatedImages: result.images, generatedImageErrors: result.errors }));
       setState(prev => ({ ...prev, step: 'result', isGenerating: false }));
-
-      // Save image references to Supabase (non-blocking)
-      if (currentProjectId && result.storedUrls && Object.keys(result.storedUrls).length > 0) {
-        const aspectRatios = Object.fromEntries(requests.map(request => [request.key, request.ratio]));
-        saveImageReferences(currentProjectId, result.storedUrls, data.selectedMetaphorId, aspectRatios).catch(e => {
-          console.warn('Failed to save image references:', e);
-        });
-      }
     } catch (error: any) {
       handleError(error);
     }
@@ -237,7 +232,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Status + History */}
-        <div className="hidden md:flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-3">
             {/* History Button */}
             <button

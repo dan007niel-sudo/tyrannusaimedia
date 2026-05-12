@@ -183,7 +183,9 @@ export const generateMultiFormatImages = async (
   size: ImageSize,
   requests: { key: string; ratio: AspectRatio }[],
   styleMode: "classic" | "modern" = "classic",
-  referenceImage: string | null = null
+  referenceImage: string | null = null,
+  projectId: string | null = null,
+  metaphorId: string | null = null,
 ): Promise<{ images: GeneratedImages; storedUrls: Record<string, string>; errors: Record<string, AppError> }> => {
   const response = await fetchWithTimeout("/api/generate-images", {
     method: "POST",
@@ -194,6 +196,8 @@ export const generateMultiFormatImages = async (
       requests,
       styleMode,
       referenceImage,
+      projectId,
+      metaphorId,
     }),
   }, IMAGE_GEN_TIMEOUT_MS);
 

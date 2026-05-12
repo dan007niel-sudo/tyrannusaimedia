@@ -80,3 +80,8 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
   - Ursache: `/api/generate-images` gab nur `null` pro Format zurueck, aber keine strukturierten Fehler pro Format.
   - Fix: Backend liefert `errors` je Format; Frontend zeigt Teilfehler und behaelt erfolgreiche Formate nutzbar.
   - Praevention/Test: Multi-Format-Flows muessen erfolgreiche und fehlgeschlagene Formate getrennt behandeln.
+- 2026-05-12
+  - Symptom: Aus der Historie geladene Projekte konnten neue Bildreferenzen falsch zuordnen, gespeicherte Bild-URLs nicht bearbeiten und `/api/save-images` war als Schreib-Endpunkt oeffentlich erreichbar.
+  - Ursache: History-Load setzte die Projekt-ID nicht zurueck, der Edit-Endpunkt akzeptierte nur Data-URIs, und die Referenzspeicherung lief ueber einen ungeschuetzten Compatibility-Endpunkt.
+  - Fix: History-Load setzt jetzt die echte Projekt-ID, Edit akzeptiert validierte Supabase-Public-URLs, Generierung speichert Referenzen serverseitig und `/api/save-images` verlangt `HISTORY_ADMIN_TOKEN`.
+  - Praevention/Test: Backend-Smokes pruefen History-Token fuer Projekt- und Save-Endpunkte; Reviewer-Pruefung muss History-Load plus Edit-Flows gemeinsam betrachten.

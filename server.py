@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -230,6 +231,7 @@ class GenerateImagesRequest(BaseModel):
     styleMode: str = "classic"
     referenceImage: str | None = None
     projectId: str | None = None
+    metaphorId: str | None = None
 
 
 class EditImageRequest(BaseModel):
@@ -284,6 +286,59 @@ def validate_uploaded_image(data_uri: str, max_bytes: int) -> tuple[str, bytes]:
         raise structured_error(
             413,
             f"Das Bild ist zu groß. Bitte maximal {max_mb}MB hochladen.",
+            "UPLOAD_TOO_LARGE",
+            False,
+        )
+    return mime_type, raw_bytes
+
+
+def validate_storage_public_url(public_url: str) -> None:
+    if not SUPABASE_URL:
+        raise ValueError("SUPABASE_URL is required for public storage URLs.")
+    base = urlparse(SUPABASE_URL)
+    parsed = urlparse(public_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Only HTTPS storage URLs are accepted.")
+    if parsed.scheme != base.scheme or parsed.netloc != base.netloc:
+        raise ValueError("Storage URL does not belong to the configured Supabase project.")
+
+
+def load_edit_image_input(image_input: str) -> tuple[str, bytes]:
+    """Accept a browser data URI or one of our Supabase public image URLs for editing."""
+    if image_input.startswith("data:"):
+        return validate_uploaded_image(image_input, MAX_EDIT_IMAGE_BYTES)
+
+    validate_storage_public_url(image_input)
+    try:
+        request = Request(image_input, headers={"User-Agent": "TyrannusAI-Media/1.0"})
+        with urlopen(request, timeout=10) as response:
+            mime_type = (response.headers.get_content_type() or "").lower()
+            raw_bytes = response.read(MAX_EDIT_IMAGE_BYTES + 1)
+    except Exception as exc:
+        raise structured_error(
+            400,
+            "Das gespeicherte Bild konnte nicht für die Bearbeitung geladen werden.",
+            "UPLOAD_INVALID",
+            True,
+        ) from exc
+
+    if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+        guessed_type, _ = mimetypes.guess_type(urlparse(image_input).path)
+        mime_type = (guessed_type or mime_type).lower()
+
+    if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+        raise structured_error(
+            415,
+            "Dieses gespeicherte Bildformat wird nicht unterstützt.",
+            "UPLOAD_INVALID",
+            False,
+        )
+    if not raw_bytes:
+        raise structured_error(400, "Das gespeicherte Bild ist leer.", "UPLOAD_INVALID", False)
+    if len(raw_bytes) > MAX_EDIT_IMAGE_BYTES:
+        raise structured_error(
+            413,
+            "Das gespeicherte Bild ist zu groß für die Bearbeitung.",
             "UPLOAD_TOO_LARGE",
             False,
         )
@@ -615,6 +670,19 @@ async def api_generate_images(req: GenerateImagesRequest):
             except Exception as e:
                 print(f"⚠️  Storage upload failed for {fmt_key}: {e}")
 
+        if req.projectId and stored_urls:
+            try:
+                aspect_ratios = {fmt.key: fmt.ratio for fmt in req.requests}
+                save_req = SaveImagesRequest(
+                    projectId=req.projectId,
+                    metaphorId=req.metaphorId,
+                    images=stored_urls,
+                    aspectRatios=aspect_ratios,
+                )
+                save_image_references(save_req)
+            except Exception as e:
+                print(f"⚠️  Image reference save failed (non-blocking): {e}")
+
     return JSONResponse(content={"images": results, "storedUrls": stored_urls, "errors": errors_by_format})
 
 
@@ -623,7 +691,7 @@ async def api_edit_image(req: EditImageRequest):
     """Edit an existing image using AI."""
     ensure_client()
 
-    mime_type, raw_bytes = validate_uploaded_image(req.imageBase64, MAX_EDIT_IMAGE_BYTES)
+    mime_type, raw_bytes = load_edit_image_input(req.imageBase64)
 
     parts = [
         types.Part(
@@ -694,35 +762,35 @@ def validate_save_image_reference_request(req: SaveImagesRequest) -> None:
     for fmt_key, public_url in req.images.items():
         if not public_url:
             continue
-        parsed = urlparse(public_url)
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ValueError("Only HTTPS storage URLs are accepted.")
-        if SUPABASE_URL and not public_url.startswith(SUPABASE_URL):
-            raise ValueError("Storage URL does not belong to the configured Supabase project.")
+        validate_storage_public_url(public_url)
         if req.aspectRatios.get(fmt_key, "1:1") not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
             raise ValueError("Unsupported aspect ratio.")
 
 
+def save_image_references(req: SaveImagesRequest) -> None:
+    validate_save_image_reference_request(req)
+
+    for fmt_key, public_url in req.images.items():
+        if not public_url:
+            continue
+        supabase_client.table("generated_images").insert({
+            "project_id": req.projectId,
+            "metaphor_id": req.metaphorId,
+            "format_key": fmt_key,
+            "aspect_ratio": req.aspectRatios.get(fmt_key, "1:1"),
+            "storage_path": public_url.split("/")[-1] if public_url else "",
+            "public_url": public_url,
+        }).execute()
+
+
 @app.post("/api/save-images")
-async def api_save_images(req: SaveImagesRequest):
-    """Save generated image references to the database."""
+async def api_save_images(req: SaveImagesRequest, _: None = Depends(ensure_history_admin)):
+    """Admin-only compatibility endpoint for saving image references."""
     if not supabase_client:
         return JSONResponse(content={"saved": False, "reason": "Persistence disabled"})
 
     try:
-        validate_save_image_reference_request(req)
-
-        for fmt_key, public_url in req.images.items():
-            if not public_url:
-                continue
-            supabase_client.table("generated_images").insert({
-                "project_id": req.projectId,
-                "metaphor_id": req.metaphorId,
-                "format_key": fmt_key,
-                "aspect_ratio": req.aspectRatios.get(fmt_key, "1:1"),
-                "storage_path": public_url.split("/")[-1] if public_url else "",
-                "public_url": public_url,
-            }).execute()
+        save_image_references(req)
         return JSONResponse(content={"saved": True})
     except Exception as e:
         print(f"⚠️  Save images failed: {e}")

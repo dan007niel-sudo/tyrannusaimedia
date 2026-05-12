@@ -3,6 +3,7 @@ import json
 import unittest
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 import server
 
@@ -43,6 +44,13 @@ class UploadValidationTests(unittest.TestCase):
 
 
 class SaveImageReferenceGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.original_supabase_url = server.SUPABASE_URL
+        server.SUPABASE_URL = "https://example.supabase.co"
+
+    def tearDown(self):
+        server.SUPABASE_URL = self.original_supabase_url
+
     def test_rejects_non_uuid_project_id_before_storage_write(self):
         with self.assertRaises(ValueError):
             server.validate_save_image_reference_request(server.SaveImagesRequest(
@@ -59,6 +67,14 @@ class SaveImageReferenceGuardTests(unittest.TestCase):
                 aspectRatios={"feed": "3:4"},
             ))
 
+    def test_rejects_lookalike_supabase_hostname(self):
+        with self.assertRaises(ValueError):
+            server.validate_save_image_reference_request(server.SaveImagesRequest(
+                projectId="12345678-1234-5678-1234-567812345678",
+                images={"feed": "https://example.supabase.co.evil.test/image.png"},
+                aspectRatios={"feed": "3:4"},
+            ))
+
     def test_rejects_unknown_aspect_ratio(self):
         with self.assertRaises(ValueError):
             server.validate_save_image_reference_request(server.SaveImagesRequest(
@@ -66,6 +82,51 @@ class SaveImageReferenceGuardTests(unittest.TestCase):
                 images={"feed": "https://example.supabase.co/storage/v1/object/public/generated-images/a.png"},
                 aspectRatios={"feed": "2:3"},
             ))
+
+
+class HistoryAuthTests(unittest.TestCase):
+    def setUp(self):
+        self.original_token = server.HISTORY_ADMIN_TOKEN
+        self.client = TestClient(server.app)
+
+    def tearDown(self):
+        server.HISTORY_ADMIN_TOKEN = self.original_token
+
+    def test_projects_endpoint_rejects_missing_token(self):
+        server.HISTORY_ADMIN_TOKEN = "secret"
+
+        response = self.client.get("/api/projects")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_projects_endpoint_rejects_wrong_token(self):
+        server.HISTORY_ADMIN_TOKEN = "secret"
+
+        response = self.client.get("/api/projects", headers={"X-History-Token": "wrong"})
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_projects_endpoint_accepts_correct_token(self):
+        server.HISTORY_ADMIN_TOKEN = "secret"
+        original_client = server.supabase_client
+        server.supabase_client = None
+        try:
+            response = self.client.get("/api/projects", headers={"X-History-Token": "secret"})
+        finally:
+            server.supabase_client = original_client
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_save_images_endpoint_requires_history_token(self):
+        server.HISTORY_ADMIN_TOKEN = "secret"
+
+        response = self.client.post("/api/save-images", json={
+            "projectId": "12345678-1234-5678-1234-567812345678",
+            "images": {},
+        })
+
+        self.assertEqual(response.status_code, 401)
 
 
 if __name__ == "__main__":

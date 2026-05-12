@@ -8,19 +8,16 @@ import ProjectHistory from './components/ProjectHistory';
 import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
 import { Clock } from 'lucide-react';
 
-// ─── Tyrannus AI Media Logo ──────────────────────────────────────────────────
+// ─── Schule von Tyrannus Logo ────────────────────────────────────────────────
 
 const TyrannusLogo = () => (
-  <div className="flex items-center gap-4 text-black select-none pointer-events-none">
-    <svg viewBox="0 0 320 110" className="brand-roof-shadow h-10 w-auto fill-black" aria-hidden="true">
-      <path d="M16 96 L103 6 L135 47 L205 47 L205 21 L231 15 L257 21 L257 47 L289 50 L314 77 L173 80 L118 80 L103 61 L48 96 Z" />
-    </svg>
-    <div className="leading-[0.88] uppercase font-brand-display">
-      <div className="text-[1.05rem] md:text-[1.2rem] font-extrabold tracking-[-0.03em]">Schule von</div>
-      <div className="text-[1.45rem] md:text-[1.65rem] font-black tracking-[-0.04em]">Tyrannus</div>
-      <div className="mt-2 h-[2px] w-full bg-[#1F3A2E]" />
-    </div>
-  </div>
+  <img
+    src="/brand/schule-von-tyrannus-logo.png"
+    alt="Schule von Tyrannus"
+    className="block h-auto w-[190px] md:w-[248px]"
+    width="884"
+    height="301"
+  />
 );
 
 // ─── Main Application ────────────────────────────────────────────────────────
@@ -227,7 +224,7 @@ const App: React.FC = () => {
       <header className="px-5 md:px-10 py-6 border-b border-black/10 flex flex-col md:flex-row justify-between items-center bg-[#fbfaf7]/95 backdrop-blur-sm sticky top-0 z-50 gap-6">
         
         {/* Logo */}
-        <div className="flex-shrink-0 scale-90 origin-left">
+        <div className="flex-shrink-0">
           <TyrannusLogo />
         </div>
 

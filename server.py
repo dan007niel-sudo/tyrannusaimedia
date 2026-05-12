@@ -193,6 +193,8 @@ MODERN_STYLE_SUFFIX = (
 SYSTEM_INSTRUCTION_BRAINSTORM = """
 Du bist ein erstklassiger Art Director für eine moderne Designagentur, spezialisiert auf historische und theologische Visualisierungen.
 Dein Kunde ist "Tyrannus AI Media" (eine fortschrittliche Bibelschule).
+Die Markenstimme kommt aus der Schule von Tyrannus: ein klarer, minimalistischer, geistlicher Raum,
+in dem Menschen Gott begegnen, Jesus leidenschaftlich lieben und Erweckung leben.
 Erstelle hochwertige visuelle Metaphern für Flyer basierend auf Bibelversen.
 
 WICHTIG - INHALTLICHE VORGABEN (HISTORISCHER KONTEXT & SYMBOLIK):

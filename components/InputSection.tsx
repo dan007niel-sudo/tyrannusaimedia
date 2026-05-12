@@ -68,7 +68,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
           Die Konzeption
         </h2>
         <p className="text-[#1F3A2E] font-medium text-base md:text-lg tracking-wide">
-          Beginne mit dem Wort. Gestalte die Vision.
+          Gott begegnen. Jesus lieben. Erweckung leben.
         </p>
       </div>
 

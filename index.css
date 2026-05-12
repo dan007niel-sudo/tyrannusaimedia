@@ -2,8 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Creato Display';
+  src: url('/fonts/CreatoDisplay-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Creato Display';
+  src: url('/fonts/CreatoDisplay-Medium.woff') format('woff');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Creato Display', sans-serif;
   background-color: #fbfaf7;
   color: #000000;
   -webkit-font-smoothing: antialiased;
@@ -38,8 +54,8 @@ body {
   font-family: 'Bebas Neue', 'Montserrat', sans-serif;
 }
 
-.brand-roof-shadow {
-  filter: drop-shadow(20px 18px 0 rgba(31, 58, 46, 0.08));
+.font-brand-body {
+  font-family: 'Creato Display', sans-serif;
 }
 
 .brand-surface {

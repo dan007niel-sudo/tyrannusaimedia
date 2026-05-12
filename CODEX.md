@@ -85,3 +85,8 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
   - Ursache: History-Load setzte die Projekt-ID nicht zurueck, der Edit-Endpunkt akzeptierte nur Data-URIs, und die Referenzspeicherung lief ueber einen ungeschuetzten Compatibility-Endpunkt.
   - Fix: History-Load setzt jetzt die echte Projekt-ID, Edit akzeptiert validierte Supabase-Public-URLs, Generierung speichert Referenzen serverseitig und `/api/save-images` verlangt `HISTORY_ADMIN_TOKEN`.
   - Praevention/Test: Backend-Smokes pruefen History-Token fuer Projekt- und Save-Endpunkte; Reviewer-Pruefung muss History-Load plus Edit-Flows gemeinsam betrachten.
+- 2026-05-12
+  - Symptom: Logo und Schrift waren nur dezent nachgebaut, aber nicht 1:1 aus der Brand Guideline uebernommen.
+  - Ursache: Header nutzte ein rekonstruiertes SVG und die App nutzte Inter statt Creato Display als Basisschrift.
+  - Fix: Originales Logo-PNG byte-identisch eingebunden, Creato Display lokal als Webfont ergaenzt und die Markenvision in UI und Prompt-Sprache aufgenommen.
+  - Praevention/Test: Bei Brand-Aenderungen Logo-Hash gegen die Quelldatei und PDF-Fontliste pruefen.

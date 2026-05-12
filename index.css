@@ -58,6 +58,10 @@ body {
   font-family: 'Creato Display', sans-serif;
 }
 
+.brand-logo {
+  mix-blend-mode: multiply;
+}
+
 .brand-surface {
   background:
     linear-gradient(90deg, rgba(31, 58, 46, 0.045) 0 1px, transparent 1px) 0 0 / 84px 84px,

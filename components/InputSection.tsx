@@ -62,9 +62,9 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
-      <div className="mx-auto max-w-2xl border-y border-black py-8 text-center space-y-4">
-        <h2 className="font-brand-display text-5xl md:text-7xl font-black tracking-[-0.05em] leading-[0.88] text-black uppercase">
+    <div className="w-full max-w-3xl mx-auto space-y-8 md:space-y-11 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-16">
+      <div className="mx-auto max-w-2xl border-y border-black py-6 md:py-8 text-center space-y-3 md:space-y-4">
+        <h2 className="font-brand-display text-[2.7rem] sm:text-5xl md:text-7xl font-black tracking-normal leading-[0.92] text-black uppercase">
           Die Konzeption
         </h2>
         <p className="text-[#1F3A2E] font-medium text-base md:text-lg tracking-wide">
@@ -82,7 +82,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
             value={data.verse}
             onChange={(e) => setData(prev => ({ ...prev, verse: e.target.value }))}
             placeholder="z.B. Römer 12:2"
-            className="w-full bg-transparent border-b-2 border-[#D6C3A3] p-4 text-xl md:text-2xl font-light text-black placeholder-zinc-300 focus:border-black outline-none transition-all rounded-none"
+            className="w-full bg-transparent border-b-2 border-[#D6C3A3] p-4 text-xl md:text-2xl font-light text-black placeholder-zinc-400 focus:border-black outline-none transition-all rounded-none"
           />
         </div>
 
@@ -95,7 +95,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
             value={data.theme}
             onChange={(e) => setData(prev => ({ ...prev, theme: e.target.value }))}
             placeholder="z.B. Erneuerung des Sinnes"
-            className="w-full bg-transparent border-b-2 border-[#D6C3A3] p-4 text-xl md:text-2xl font-light text-black placeholder-zinc-300 focus:border-black outline-none transition-all rounded-none"
+            className="w-full bg-transparent border-b-2 border-[#D6C3A3] p-4 text-xl md:text-2xl font-light text-black placeholder-zinc-400 focus:border-black outline-none transition-all rounded-none"
           />
         </div>
 
@@ -107,7 +107,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
             value={data.userVision}
             onChange={(e) => setData(prev => ({ ...prev, userVision: e.target.value }))}
             placeholder="Hast du schon ein Bild im Kopf? Z.B. 'Ein alter Olivenbaum im Sturm', 'Goldene Risse im Beton', 'Moderne Architektur bei Nacht'..."
-            className="w-full bg-[#fbfaf7] border border-black/10 p-4 text-lg font-light text-black placeholder-zinc-300 focus:border-black focus:bg-white outline-none transition-all resize-none h-32"
+            className="w-full bg-[#fbfaf7] border border-black/10 p-4 text-lg font-light text-black placeholder-zinc-400 focus:border-black focus:bg-white outline-none transition-all resize-none h-32"
           />
         </div>
 
@@ -202,7 +202,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
             className="w-full bg-black hover:bg-[#1F3A2E] disabled:bg-zinc-100 disabled:text-zinc-300 text-white font-bold py-6 px-8 transition-all flex items-center justify-center gap-4 group shadow-xl shadow-zinc-200/50"
             >
             {isLoading ? (
-                <span className="uppercase tracking-widest text-xs animate-pulse">Konsultiere Art Director...</span>
+                <span className="uppercase tracking-widest text-xs animate-pulse">Forme geistlichen Raum...</span>
             ) : (
                 <>
                 <span className="uppercase tracking-widest text-sm">Konzepte Entwickeln</span>

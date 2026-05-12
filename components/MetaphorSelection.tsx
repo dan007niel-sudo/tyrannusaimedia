@@ -34,7 +34,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
           <ChevronLeft size={16} /> Zurück
         </button>
         <div className="text-center">
-          <h2 className="font-brand-display text-2xl md:text-3xl font-black tracking-[-0.03em] uppercase text-black">Visuelle Richtung</h2>
+          <h2 className="font-brand-display text-2xl md:text-3xl font-black tracking-normal uppercase text-black">Visuelle Richtung</h2>
         </div>
         <div className="w-20" />
       </div>
@@ -56,7 +56,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
               `}
             >
               <div className="flex justify-between items-start mb-6">
-                <h3 className={`font-brand-display text-2xl font-black tracking-[-0.03em] ${isSelected ? 'text-white' : 'text-black'}`}>
+                <h3 className={`font-brand-display text-2xl font-black tracking-normal ${isSelected ? 'text-white' : 'text-black'}`}>
                     {metaphor.title}
                 </h3>
                 {isSelected && <Check size={24} className="text-white" />}
@@ -167,7 +167,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
           className="w-full max-w-sm bg-black hover:bg-[#1F3A2E] disabled:bg-zinc-100 disabled:text-zinc-300 text-white font-bold py-5 px-8 transition-all flex items-center justify-center gap-3 shadow-2xl mt-8"
         >
           {isLoading ? (
-             <><Loader2 className="animate-spin" /> <span className="uppercase tracking-widest text-xs">Produziere Assets...</span></>
+             <><Loader2 className="animate-spin" /> <span className="uppercase tracking-widest text-xs">Erweckung sichtbar machen...</span></>
           ) : (
             <><ImageIcon size={18} /> <span className="uppercase tracking-widest text-xs">Ausgewählte Formate Generieren</span></>
           )}

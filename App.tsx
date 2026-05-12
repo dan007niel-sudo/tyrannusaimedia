@@ -14,7 +14,7 @@ const TyrannusLogo = () => (
   <img
     src="/brand/schule-von-tyrannus-logo.png"
     alt="Schule von Tyrannus"
-    className="block h-auto w-[190px] md:w-[248px]"
+    className="brand-logo block h-auto w-[156px] md:w-[214px]"
     width="884"
     height="301"
   />
@@ -221,7 +221,7 @@ const App: React.FC = () => {
     <div className="brand-surface min-h-screen text-black selection:bg-black selection:text-white flex flex-col">
 
       {/* Header */}
-      <header className="px-5 md:px-10 py-6 border-b border-black/10 flex flex-col md:flex-row justify-between items-center bg-[#fbfaf7]/95 backdrop-blur-sm sticky top-0 z-50 gap-6">
+      <header className="px-4 md:px-10 py-3 md:py-4 border-b border-black/10 flex flex-row justify-between items-center bg-[#fbfaf7]/95 backdrop-blur-sm sticky top-0 z-50 gap-4">
         
         {/* Logo */}
         <div className="flex-shrink-0">
@@ -240,7 +240,7 @@ const App: React.FC = () => {
               <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 hover:text-black">Historie</span>
             </button>
 
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
               <div className="w-1.5 h-1.5 bg-[#D6C3A3] animate-pulse"></div>
               <span className="text-[10px] font-bold uppercase tracking-widest">System Ready</span>
             </div>
@@ -249,7 +249,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12 md:py-16 flex flex-col items-center justify-center flex-grow">
+      <main className="container mx-auto px-4 py-9 md:py-14 flex flex-col items-center justify-center flex-grow">
         {/* Structured Error Display */}
         {appError && (
           <ErrorDisplay

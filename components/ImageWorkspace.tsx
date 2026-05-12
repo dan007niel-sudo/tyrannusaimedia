@@ -124,8 +124,8 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
                 <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">
                     Format nicht verfügbar
                 </p>
-                <p className="text-sm text-zinc-500 leading-relaxed">
-                    {currentGenerationError?.message || 'Dieses Format konnte nicht generiert werden.'}
+            <p className="text-sm text-zinc-500 leading-relaxed">
+                    {currentGenerationError?.message || 'Für dieses Format ist noch kein sichtbarer Entwurf entstanden.'}
                 </p>
             </div>
             )}
@@ -144,7 +144,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
         
         {/* Info Card */}
         <div className="border-y border-black py-6">
-            <h3 className="font-brand-display text-2xl font-black text-black mb-2 tracking-[-0.03em]">{data.verse}</h3>
+            <h3 className="font-brand-display text-2xl font-black text-black mb-2 tracking-normal">{data.verse}</h3>
             <p className="text-[#1F3A2E] font-medium italic">{data.theme}</p>
         </div>
 
@@ -160,8 +160,8 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
             <textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder="Beschreibe die Änderung (z.B. 'Mehr Licht', 'Hintergrund dunkler')..."
-                className="w-full bg-white/78 border border-black/10 p-4 text-sm text-black placeholder-zinc-300 resize-none h-32 focus:border-black outline-none mb-4 font-light transition-colors"
+                placeholder="Beschreibe die Änderung (z.B. 'mehr Licht', 'ruhiger Hintergrund', 'stärkerer Fokus')..."
+                className="w-full bg-white/78 border border-black/10 p-4 text-sm text-black placeholder-zinc-400 resize-none h-32 focus:border-black outline-none mb-4 font-light transition-colors"
             />
 
             {editError && (

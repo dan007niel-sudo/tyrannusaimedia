@@ -178,7 +178,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
         <div className="flex items-center justify-between p-6 border-b border-black/10">
           <div className="flex items-center gap-3">
             <Clock size={18} className="text-zinc-400" />
-            <h2 className="font-brand-display text-lg font-black tracking-[-0.03em]">Projekt-Historie</h2>
+            <h2 className="font-brand-display text-lg font-black tracking-normal">Projekt-Historie</h2>
           </div>
           <button
             onClick={onClose}
@@ -228,21 +228,21 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
               <Loader2 size={24} className="animate-spin mb-3" />
-              <span className="text-xs uppercase tracking-widest">Lade Projekte...</span>
+              <span className="text-xs uppercase tracking-widest">Öffne den Raum...</span>
             </div>
           ) : !historyToken.trim() ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-300">
               <KeyRound size={32} className="mb-4" />
-              <p className="text-sm font-medium text-zinc-400">Historie geschützt</p>
+              <p className="text-sm font-medium text-zinc-400">Geschützter Raum</p>
               <p className="text-xs text-zinc-300 mt-1 text-center max-w-xs">
-                Gib das Admin-Token ein, um gespeicherte Projekte zu laden.
+                Gib das Admin-Token ein, um gespeicherte Entwürfe zu öffnen.
               </p>
             </div>
           ) : projects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-300">
               <BookOpen size={32} className="mb-4" />
-              <p className="text-sm font-medium text-zinc-400">Noch keine Projekte</p>
-              <p className="text-xs text-zinc-300 mt-1">Erstelle dein erstes Projekt über den Editor.</p>
+              <p className="text-sm font-medium text-zinc-400">Noch kein Entwurf sichtbar</p>
+              <p className="text-xs text-zinc-300 mt-1">Beginne mit Wort, Thema und Vision.</p>
             </div>
           ) : (
             projects.map((project) => (

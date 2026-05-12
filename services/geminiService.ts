@@ -17,6 +17,7 @@ import { AppError } from "../components/ErrorDisplay";
 const BRAINSTORM_TIMEOUT_MS = 60_000;   // 60 seconds
 const IMAGE_GEN_TIMEOUT_MS = 180_000;   // 3 minutes (images take longer)
 const EDIT_TIMEOUT_MS = 150_000;        // 2.5 minutes
+const HISTORY_TOKEN_HEADER = "X-History-Token";
 
 // ─── Error Handling ──────────────────────────────────────────────────────────
 
@@ -81,6 +82,8 @@ function mapHttpToErrorType(status: number): AppError['errorType'] {
   switch (status) {
     case 403: case 401: return 'PERMISSION_DENIED';
     case 422: return 'CONTENT_BLOCKED';
+    case 413: return 'UPLOAD_TOO_LARGE';
+    case 415: return 'UPLOAD_INVALID';
     case 429: return 'RATE_LIMITED';
     case 504: return 'TIMEOUT';
     case 502: case 503: return 'SERVER_ERROR';
@@ -90,6 +93,10 @@ function mapHttpToErrorType(status: number): AppError['errorType'] {
 
 function isRetryableStatus(status: number): boolean {
   return [429, 500, 502, 503, 504].includes(status);
+}
+
+function buildHistoryHeaders(historyToken: string): HeadersInit {
+  return historyToken.trim() ? { [HISTORY_TOKEN_HEADER]: historyToken.trim() } : {};
 }
 
 /**
@@ -177,7 +184,7 @@ export const generateMultiFormatImages = async (
   requests: { key: string; ratio: AspectRatio }[],
   styleMode: "classic" | "modern" = "classic",
   referenceImage: string | null = null
-): Promise<{ images: GeneratedImages; storedUrls: Record<string, string> }> => {
+): Promise<{ images: GeneratedImages; storedUrls: Record<string, string>; errors: Record<string, AppError> }> => {
   const response = await fetchWithTimeout("/api/generate-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -191,7 +198,7 @@ export const generateMultiFormatImages = async (
   }, IMAGE_GEN_TIMEOUT_MS);
 
   const data = await handleResponse(response);
-  return { images: data.images, storedUrls: data.storedUrls || {} };
+  return { images: data.images, storedUrls: data.storedUrls || {}, errors: data.errors || {} };
 };
 
 // ─── Image Editing ───────────────────────────────────────────────────────────
@@ -247,28 +254,37 @@ export interface ProjectDetail {
   }[];
 }
 
-export const fetchProjects = async (): Promise<ProjectSummary[]> => {
-  const response = await fetchWithTimeout("/api/projects", {}, 10_000);
+export const fetchProjects = async (historyToken: string): Promise<ProjectSummary[]> => {
+  const response = await fetchWithTimeout("/api/projects", {
+    headers: buildHistoryHeaders(historyToken),
+  }, 10_000);
   return handleResponse(response);
 };
 
-export const fetchProject = async (projectId: string): Promise<ProjectDetail> => {
-  const response = await fetchWithTimeout(`/api/projects/${projectId}`, {}, 10_000);
+export const fetchProject = async (projectId: string, historyToken: string): Promise<ProjectDetail> => {
+  const response = await fetchWithTimeout(`/api/projects/${projectId}`, {
+    headers: buildHistoryHeaders(historyToken),
+  }, 10_000);
   return handleResponse(response);
 };
 
-export const deleteProject = async (projectId: string): Promise<void> => {
-  await fetchWithTimeout(`/api/projects/${projectId}`, { method: "DELETE" }, 10_000);
+export const deleteProject = async (projectId: string, historyToken: string): Promise<void> => {
+  const response = await fetchWithTimeout(`/api/projects/${projectId}`, {
+    method: "DELETE",
+    headers: buildHistoryHeaders(historyToken),
+  }, 10_000);
+  await handleResponse(response);
 };
 
 export const saveImageReferences = async (
   projectId: string,
   images: Record<string, string>,
   metaphorId?: string | null,
+  aspectRatios: Record<string, string> = {},
 ): Promise<void> => {
   await fetchWithTimeout("/api/save-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, metaphorId, images }),
+    body: JSON.stringify({ projectId, metaphorId, images, aspectRatios }),
   }, 10_000);
 };

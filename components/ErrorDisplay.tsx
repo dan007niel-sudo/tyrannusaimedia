@@ -3,7 +3,7 @@ import { AlertTriangle, RefreshCw, ShieldAlert, Clock, Ban, WifiOff, HelpCircle,
 
 export interface AppError {
   message: string;
-  errorType: 'PERMISSION_DENIED' | 'RATE_LIMITED' | 'TIMEOUT' | 'CONTENT_BLOCKED' | 'MODEL_UNAVAILABLE' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'UNKNOWN';
+  errorType: 'PERMISSION_DENIED' | 'RATE_LIMITED' | 'TIMEOUT' | 'CONTENT_BLOCKED' | 'MODEL_UNAVAILABLE' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'UPLOAD_INVALID' | 'UPLOAD_TOO_LARGE' | 'UNKNOWN';
   retryable: boolean;
 }
 
@@ -48,6 +48,20 @@ const ERROR_CONFIG: Record<string, {
     bgColor: 'bg-purple-50',
     borderColor: 'border-purple-200',
     title: 'Inhalt blockiert',
+  },
+  UPLOAD_INVALID: {
+    icon: <AlertTriangle size={18} />,
+    color: 'text-amber-700',
+    bgColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    title: 'Upload nicht möglich',
+  },
+  UPLOAD_TOO_LARGE: {
+    icon: <AlertTriangle size={18} />,
+    color: 'text-amber-700',
+    bgColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    title: 'Bild zu groß',
   },
   MODEL_UNAVAILABLE: {
     icon: <WifiOff size={18} />,

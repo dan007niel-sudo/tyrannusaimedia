@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AppData } from '../types';
 import { Download, RefreshCw, Wand2, ChevronLeft, AlertCircle, Smartphone, Layout, Monitor, Square } from 'lucide-react';
-import { editImage } from '../services/geminiService';
+import { editImage, extractAppError } from '../services/geminiService';
+import ErrorDisplay, { AppError } from './ErrorDisplay';
 
 interface ImageWorkspaceProps {
   data: AppData;
@@ -16,9 +17,11 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
   
   const [editPrompt, setEditPrompt] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<AppError | null>(null);
 
   const currentImage = data.generatedImages[activeKey];
+  const currentGenerationError = data.generatedImageErrors[activeKey];
+  const failedKeys = Object.keys(data.generatedImageErrors || {});
 
   const handleDownload = () => {
     if (!currentImage) return;
@@ -33,7 +36,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
   const handleEdit = async () => {
     if (!editPrompt || !currentImage) return;
     setIsEditing(true);
-    setError(null);
+    setEditError(null);
     try {
       const newImage = await editImage(currentImage, editPrompt);
       
@@ -46,7 +49,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
       }));
       setEditPrompt('');
     } catch (err) {
-      setError("Bearbeitung fehlgeschlagen.");
+      setEditError(extractAppError(err));
     } finally {
       setIsEditing(false);
     }
@@ -54,7 +57,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
 
   const getLabel = (key: string) => {
       switch(key) {
-          case 'feed': return { text: 'Feed (4:5)', icon: <Layout size={14} /> };
+          case 'feed': return { text: 'Feed (3:4)', icon: <Layout size={14} /> };
           case 'story': return { text: 'Story (9:16)', icon: <Smartphone size={14} /> };
           case 'banner': return { text: 'Banner (16:9)', icon: <Monitor size={14} /> };
           default: return { text: `Custom (${data.customRatio})`, icon: <Square size={14} /> };
@@ -66,6 +69,16 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
       
       {/* Left Column: Image Display */}
       <div className="flex-1 bg-zinc-50 flex flex-col relative overflow-hidden group border border-zinc-100 p-8">
+        {failedKeys.length > 0 && (
+          <div className="mb-5 border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 rounded-sm">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-1">
+              <AlertCircle size={14} /> Teilweise generiert
+            </div>
+            <p className="text-xs leading-relaxed">
+              {failedKeys.map(key => getLabel(key).text).join(', ')} konnte nicht erzeugt werden. Die erfolgreichen Formate bleiben verfügbar.
+            </p>
+          </div>
+        )}
         
         {/* Toggle Controls - Dynamic */}
         <div className="flex justify-center mb-6 overflow-x-auto">
@@ -98,7 +111,17 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
                 }`}
             />
             ) : (
-            <div className="text-zinc-300 font-light uppercase tracking-widest">Wähle ein Format</div>
+            <div className="max-w-md text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white border border-zinc-200 text-amber-700">
+                    <AlertCircle size={18} />
+                </div>
+                <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">
+                    Format nicht verfügbar
+                </p>
+                <p className="text-sm text-zinc-500 leading-relaxed">
+                    {currentGenerationError?.message || 'Dieses Format konnte nicht generiert werden.'}
+                </p>
+            </div>
             )}
         </div>
         
@@ -135,15 +158,17 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
                 className="w-full bg-white border border-zinc-200 p-4 text-sm text-black placeholder-zinc-300 resize-none h-32 focus:border-black outline-none mb-4 font-light transition-colors"
             />
 
-            {error && (
-                <div className="mb-4 text-red-600 text-xs flex items-center gap-2">
-                    <AlertCircle size={12} /> {error}
-                </div>
+            {editError && (
+                <ErrorDisplay
+                    error={editError}
+                    onRetry={editError.retryable ? handleEdit : undefined}
+                    onDismiss={() => setEditError(null)}
+                />
             )}
 
             <button
                 onClick={handleEdit}
-                disabled={!editPrompt || isEditing}
+                disabled={!editPrompt || isEditing || !currentImage}
                 className="w-full bg-white border border-zinc-200 hover:border-black text-black text-xs font-bold uppercase tracking-widest py-4 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {isEditing ? <RefreshCw className="animate-spin" size={14} /> : "Änderung Anwenden"}

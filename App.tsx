@@ -50,6 +50,7 @@ const App: React.FC = () => {
     metaphors: [],
     selectedMetaphorId: null,
     generatedImages: {},
+    generatedImageErrors: {},
     imageSize: '1K',
     selectedFormats: {
       feed: true,
@@ -113,6 +114,7 @@ const App: React.FC = () => {
       ...partialData,
       metaphors,
       selectedMetaphorId: metaphors.length > 0 ? metaphors[0].id : null,
+      generatedImageErrors: {},
     }));
 
     // If there are images, go to result; if metaphors, go to brainstorm
@@ -184,12 +186,13 @@ const App: React.FC = () => {
         data.styleMode,
         data.referenceImage
       );
-      setData(prev => ({ ...prev, generatedImages: result.images }));
+      setData(prev => ({ ...prev, generatedImages: result.images, generatedImageErrors: result.errors }));
       setState(prev => ({ ...prev, step: 'result', isGenerating: false }));
 
       // Save image references to Supabase (non-blocking)
       if (currentProjectId && result.storedUrls && Object.keys(result.storedUrls).length > 0) {
-        saveImageReferences(currentProjectId, result.storedUrls, data.selectedMetaphorId).catch(e => {
+        const aspectRatios = Object.fromEntries(requests.map(request => [request.key, request.ratio]));
+        saveImageReferences(currentProjectId, result.storedUrls, data.selectedMetaphorId, aspectRatios).catch(e => {
           console.warn('Failed to save image references:', e);
         });
       }

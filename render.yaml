@@ -11,5 +11,11 @@ services:
     envVars:
       - key: GEMINI_API_KEY
         sync: false  # Must be set manually in Render dashboard
+      - key: HISTORY_ADMIN_TOKEN
+        sync: false  # Must be set manually in Render dashboard
+      - key: SUPABASE_URL
+        sync: false  # Required for project persistence and storage uploads
+      - key: SUPABASE_KEY
+        sync: false  # Server-side Supabase key; never expose in frontend
       - key: PYTHON_VERSION
         value: 3.11.11

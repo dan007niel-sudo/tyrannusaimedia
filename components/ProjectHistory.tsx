@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, Trash2, ChevronRight, Loader2, BookOpen } from 'lucide-react';
+import { X, Clock, Trash2, ChevronRight, Loader2, BookOpen, KeyRound } from 'lucide-react';
 import { fetchProjects, fetchProject, deleteProject, ProjectSummary } from '../services/geminiService';
 import { AppData, Metaphor } from '../types';
 
@@ -9,33 +9,98 @@ interface ProjectHistoryProps {
   onLoadProject: (data: Partial<AppData>, metaphors: Metaphor[]) => void;
 }
 
+const HISTORY_TOKEN_STORAGE_KEY = 'tyrannus-history-token';
+
+const readStoredHistoryToken = () => {
+  try {
+    return sessionStorage.getItem(HISTORY_TOKEN_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+};
+
+const writeStoredHistoryToken = (token: string) => {
+  try {
+    if (token) {
+      sessionStorage.setItem(HISTORY_TOKEN_STORAGE_KEY, token);
+    } else {
+      sessionStorage.removeItem(HISTORY_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Browsers can block storage in private or hardened modes. The in-memory token still works.
+  }
+};
+
 const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoadProject }) => {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingProject, setLoadingProject] = useState<string | null>(null);
+  const [historyToken, setHistoryToken] = useState(readStoredHistoryToken);
+  const [tokenDraft, setTokenDraft] = useState(historyToken);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      loadProjects();
+      if (historyToken.trim()) {
+        loadProjects(historyToken);
+      } else {
+        setProjects([]);
+        setError(null);
+      }
     }
   }, [isOpen]);
 
-  const loadProjects = async () => {
+  const loadProjects = async (token = historyToken): Promise<boolean> => {
+    if (!token.trim()) return false;
     setLoading(true);
+    setError(null);
     try {
-      const data = await fetchProjects();
+      const data = await fetchProjects(token);
       setProjects(data);
-    } catch (e) {
+      return true;
+    } catch (e: any) {
       console.error('Failed to load projects:', e);
+      setError(e?.appError?.message || 'Projekt-Historie konnte nicht geladen werden.');
+      setProjects([]);
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSaveToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextToken = tokenDraft.trim();
+
+    if (!nextToken) {
+      setHistoryToken('');
+      writeStoredHistoryToken('');
+      setProjects([]);
+      setError(null);
+      return;
+    }
+
+    const tokenWorks = await loadProjects(nextToken);
+    if (tokenWorks) {
+      setHistoryToken(nextToken);
+      setTokenDraft(nextToken);
+      writeStoredHistoryToken(nextToken);
+    }
+  };
+
+  const handleForgetToken = () => {
+    setHistoryToken('');
+    setTokenDraft('');
+    setProjects([]);
+    setError(null);
+    writeStoredHistoryToken('');
+  };
+
   const handleLoadProject = async (projectId: string) => {
     setLoadingProject(projectId);
+    setError(null);
     try {
-      const detail = await fetchProject(projectId);
+      const detail = await fetchProject(projectId, historyToken);
 
       // Map DB metaphors to app Metaphor type
       const metaphors: Metaphor[] = detail.metaphors.map(m => ({
@@ -63,8 +128,9 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
         metaphors,
       );
       onClose();
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load project:', e);
+      setError(e?.appError?.message || 'Projekt konnte nicht geladen werden.');
     } finally {
       setLoadingProject(null);
     }
@@ -74,11 +140,13 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
     e.stopPropagation();
     if (!confirm('Projekt wirklich löschen? Alle Bilder gehen verloren.')) return;
 
+    setError(null);
     try {
-      await deleteProject(projectId);
+      await deleteProject(projectId, historyToken);
       setProjects(prev => prev.filter(p => p.id !== projectId));
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to delete project:', e);
+      setError(e?.appError?.message || 'Projekt konnte nicht gelöscht werden.');
     }
   };
 
@@ -119,12 +187,55 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
           </button>
         </div>
 
+        {/* Auth */}
+        <form onSubmit={handleSaveToken} className="p-4 border-b border-zinc-100 bg-zinc-50/60">
+          <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
+            <KeyRound size={12} />
+            Historie-Token
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={tokenDraft}
+              onChange={(e) => setTokenDraft(e.target.value)}
+              placeholder="Admin-Token eingeben"
+              className="min-w-0 flex-1 bg-white border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-black rounded-sm"
+            />
+            <button
+              type="submit"
+              className="bg-black text-white px-4 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-zinc-800 transition-colors rounded-sm"
+            >
+              Laden
+            </button>
+          </div>
+          {historyToken && (
+            <button
+              type="button"
+              onClick={handleForgetToken}
+              className="mt-2 text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-black transition-colors"
+            >
+              Token vergessen
+            </button>
+          )}
+          {error && (
+            <p className="mt-2 text-xs text-red-600 leading-relaxed">{error}</p>
+          )}
+        </form>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
               <Loader2 size={24} className="animate-spin mb-3" />
               <span className="text-xs uppercase tracking-widest">Lade Projekte...</span>
+            </div>
+          ) : !historyToken.trim() ? (
+            <div className="flex flex-col items-center justify-center py-20 text-zinc-300">
+              <KeyRound size={32} className="mb-4" />
+              <p className="text-sm font-medium text-zinc-400">Historie geschützt</p>
+              <p className="text-xs text-zinc-300 mt-1 text-center max-w-xs">
+                Gib das Admin-Token ein, um gespeicherte Projekte zu laden.
+              </p>
             </div>
           ) : projects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-300">

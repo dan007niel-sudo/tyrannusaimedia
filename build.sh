@@ -10,7 +10,7 @@ echo "════════════════════════�
 
 # 1. Install Node.js dependencies & build frontend
 echo "→ Installing Node.js dependencies..."
-npm install
+npm ci
 
 echo "→ Building React frontend..."
 npm run build

@@ -106,7 +106,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
 
                 {/* Format Toggles */}
                 <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.feed ? 'border-black bg-zinc-50' : 'border-zinc-100'}`}>
-                    <span className="text-xs font-bold uppercase tracking-widest">Feed (4:5)</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Feed (3:4)</span>
                     <input 
                         type="checkbox" 
                         checked={data.selectedFormats.feed} 

@@ -8,15 +8,18 @@ import os
 import json
 import base64
 import asyncio
+import secrets
 import mimetypes
 import traceback
 import uuid
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from google import genai
 from google.genai import types
@@ -24,6 +27,9 @@ from google.genai import types
 # ─── Error Classification ─────────────────────────────────────────────────────
 
 IMAGE_GEN_TIMEOUT_SECONDS = 120  # 2 minutes max per image
+MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_EDIT_IMAGE_BYTES = 20 * 1024 * 1024
+ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 def classify_gemini_error(error: Exception) -> HTTPException:
     """
@@ -136,9 +142,13 @@ def check_safety_block(response) -> None:
 # ─── Configuration ──────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+HISTORY_ADMIN_TOKEN = os.environ.get("HISTORY_ADMIN_TOKEN", "")
 
 if not GEMINI_API_KEY:
     print("⚠️  WARNING: GEMINI_API_KEY not set. API endpoints will fail.")
+
+if not HISTORY_ADMIN_TOKEN:
+    print("⚠️  WARNING: HISTORY_ADMIN_TOKEN not set. Project history endpoints are locked.")
 
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -215,7 +225,7 @@ class FormatRequest(BaseModel):
 
 class GenerateImagesRequest(BaseModel):
     metaphorPrompt: str
-    imageSize: str = "1K"
+    imageSize: Literal["1K", "2K", "4K"] = "1K"
     requests: list[FormatRequest]
     styleMode: str = "classic"
     referenceImage: str | None = None
@@ -229,12 +239,54 @@ class EditImageRequest(BaseModel):
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+def structured_error(status_code: int, message: str, error_type: str, retryable: bool) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail=json.dumps({
+            "message": message,
+            "errorType": error_type,
+            "retryable": retryable,
+        })
+    )
+
+
 def parse_data_uri(data_uri: str) -> tuple[str, bytes]:
     """Parse a data URI into (mime_type, raw_bytes)."""
-    # Format: data:image/png;base64,iVBORw0KGgo...
+    if not data_uri.startswith("data:") or "," not in data_uri:
+        raise ValueError("UPLOAD_INVALID: Ungültiges Bildformat.")
+
     header, b64_data = data_uri.split(",", 1)
-    mime_type = header.split(":")[1].split(";")[0]
-    raw_bytes = base64.b64decode(b64_data)
+    if ";base64" not in header:
+        raise ValueError("UPLOAD_INVALID: Bild muss als Base64-Data-URI übertragen werden.")
+
+    mime_type = header.split(":", 1)[1].split(";", 1)[0].lower()
+    try:
+        raw_bytes = base64.b64decode(b64_data, validate=True)
+    except Exception as exc:
+        raise ValueError("UPLOAD_INVALID: Bilddaten konnten nicht gelesen werden.") from exc
+    return mime_type, raw_bytes
+
+
+def validate_uploaded_image(data_uri: str, max_bytes: int) -> tuple[str, bytes]:
+    """Validate a browser-provided image data URI before passing it to Gemini."""
+    mime_type, raw_bytes = parse_data_uri(data_uri)
+    if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+        raise structured_error(
+            415,
+            "Dieses Bildformat wird nicht unterstützt. Bitte JPG, PNG oder WebP verwenden.",
+            "UPLOAD_INVALID",
+            False,
+        )
+    if not raw_bytes:
+        raise structured_error(400, "Das hochgeladene Bild ist leer.", "UPLOAD_INVALID", False)
+    if len(raw_bytes) > max_bytes:
+        max_mb = max_bytes // (1024 * 1024)
+        raise structured_error(
+            413,
+            f"Das Bild ist zu groß. Bitte maximal {max_mb}MB hochladen.",
+            "UPLOAD_TOO_LARGE",
+            False,
+        )
     return mime_type, raw_bytes
 
 
@@ -253,9 +305,32 @@ def ensure_client():
         )
 
 
+def ensure_history_admin(x_history_token: str | None = Header(default=None, alias="X-History-Token")) -> None:
+    """Protect project history reads and deletes with a server-side admin token."""
+    if not HISTORY_ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail=json.dumps({
+                "message": "Projekt-Historie ist noch nicht abgesichert konfiguriert. Bitte HISTORY_ADMIN_TOKEN in Render setzen.",
+                "errorType": "SERVER_ERROR",
+                "retryable": False,
+            })
+        )
+
+    if not x_history_token or not secrets.compare_digest(x_history_token, HISTORY_ADMIN_TOKEN):
+        raise HTTPException(
+            status_code=401,
+            detail=json.dumps({
+                "message": "Historie-Token fehlt oder ist ungültig.",
+                "errorType": "PERMISSION_DENIED",
+                "retryable": False,
+            })
+        )
+
+
 def build_reference_part(data_uri: str) -> types.Part:
     """Build a Gemini Part from a data URI image."""
-    mime_type, raw_bytes = parse_data_uri(data_uri)
+    mime_type, raw_bytes = validate_uploaded_image(data_uri, MAX_REFERENCE_IMAGE_BYTES)
     return types.Part(
         inline_data=types.Blob(mime_type=mime_type, data=raw_bytes)
     )
@@ -368,18 +443,26 @@ async def api_brainstorm(req: BrainstormRequest):
                 }).execute()
                 project_id = project_result.data[0]["id"] if project_result.data else None
 
-                # Save metaphors
+                # Save metaphors and return the persisted DB ids to the client.
                 if project_id:
+                    saved_metaphors = []
                     for m in metaphors_data:
-                        supabase_client.table("metaphors").insert({
+                        metaphor_result = supabase_client.table("metaphors").insert({
                             "project_id": project_id,
                             "title": m.get("title", ""),
                             "description": m.get("description", ""),
                             "visual_prompt": m.get("visualPrompt", ""),
                         }).execute()
+                        if not metaphor_result.data or not metaphor_result.data[0].get("id"):
+                            raise RuntimeError("Metaphor insert did not return a database id.")
+                        saved = dict(m)
+                        saved["id"] = metaphor_result.data[0]["id"]
+                        saved_metaphors.append(saved)
+                    metaphors_data = saved_metaphors
                     print(f"✅ Project {project_id} saved with {len(metaphors_data)} metaphors.")
             except Exception as e:
                 print(f"⚠️  Supabase save failed (non-blocking): {e}")
+                project_id = None
 
         return JSONResponse(content={"metaphors": metaphors_data, "projectId": project_id})
 
@@ -393,7 +476,7 @@ async def api_brainstorm(req: BrainstormRequest):
 
 async def _generate_single_image(
     prompt: str,
-    size: str,
+    size: Literal["1K", "2K", "4K"],
     aspect_ratio: str,
     style_mode: str,
     reference_image: str | None,
@@ -417,6 +500,7 @@ async def _generate_single_image(
                     response_modalities=["IMAGE"],
                     image_config=types.ImageConfig(
                         aspect_ratio=aspect_ratio,
+                        image_size=size,
                     ),
                 ),
             ),
@@ -465,6 +549,7 @@ async def api_generate_images(req: GenerateImagesRequest):
 
     results = {}
     errors_by_type = {}  # Track error types for smart error messages
+    errors_by_format = {}
     all_failed = True
 
     for fmt, result in zip(req.requests, raw_results):
@@ -472,11 +557,19 @@ async def api_generate_images(req: GenerateImagesRequest):
             error_msg = str(result)
             print(f"⚠️  Image generation failed for {fmt.key}: {error_msg}")
 
-            # Classify the error
-            classified = classify_gemini_error(result)
-            error_detail = json.loads(classified.detail)
+            if isinstance(result, HTTPException):
+                classified = result
+                detail = classified.detail
+                error_detail = json.loads(detail) if isinstance(detail, str) else detail
+            else:
+                classified = classify_gemini_error(result)
+                error_detail = json.loads(classified.detail)
             error_type = error_detail.get("errorType", "UNKNOWN")
-            errors_by_type[error_type] = error_detail
+            errors_by_type[error_type] = {
+                "statusCode": classified.status_code,
+                **error_detail,
+            }
+            errors_by_format[fmt.key] = error_detail
 
             results[fmt.key] = None
         else:
@@ -491,8 +584,8 @@ async def api_generate_images(req: GenerateImagesRequest):
             if prio_type in errors_by_type:
                 err = errors_by_type[prio_type]
                 raise HTTPException(
-                    status_code=classify_gemini_error(Exception(prio_type.lower())).status_code,
-                    detail=json.dumps(err)
+                    status_code=err.pop("statusCode", 500),
+                    detail=json.dumps(err),
                 )
         # Generic fallback
         first_err = next(iter(errors_by_type.values()))
@@ -522,7 +615,7 @@ async def api_generate_images(req: GenerateImagesRequest):
             except Exception as e:
                 print(f"⚠️  Storage upload failed for {fmt_key}: {e}")
 
-    return JSONResponse(content={"images": results, "storedUrls": stored_urls})
+    return JSONResponse(content={"images": results, "storedUrls": stored_urls, "errors": errors_by_format})
 
 
 @app.post("/api/edit-image")
@@ -530,7 +623,7 @@ async def api_edit_image(req: EditImageRequest):
     """Edit an existing image using AI."""
     ensure_client()
 
-    mime_type, raw_bytes = parse_data_uri(req.imageBase64)
+    mime_type, raw_bytes = validate_uploaded_image(req.imageBase64, MAX_EDIT_IMAGE_BYTES)
 
     parts = [
         types.Part(
@@ -589,7 +682,25 @@ async def api_edit_image(req: EditImageRequest):
 class SaveImagesRequest(BaseModel):
     projectId: str
     metaphorId: str | None = None
-    images: dict  # { "feed": "public_url", ... }
+    images: dict[str, str]  # { "feed": "public_url", ... }
+    aspectRatios: dict[str, str] = Field(default_factory=dict)
+
+
+def validate_save_image_reference_request(req: SaveImagesRequest) -> None:
+    uuid.UUID(req.projectId)
+    if req.metaphorId:
+        uuid.UUID(req.metaphorId)
+
+    for fmt_key, public_url in req.images.items():
+        if not public_url:
+            continue
+        parsed = urlparse(public_url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("Only HTTPS storage URLs are accepted.")
+        if SUPABASE_URL and not public_url.startswith(SUPABASE_URL):
+            raise ValueError("Storage URL does not belong to the configured Supabase project.")
+        if req.aspectRatios.get(fmt_key, "1:1") not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
+            raise ValueError("Unsupported aspect ratio.")
 
 
 @app.post("/api/save-images")
@@ -599,16 +710,16 @@ async def api_save_images(req: SaveImagesRequest):
         return JSONResponse(content={"saved": False, "reason": "Persistence disabled"})
 
     try:
+        validate_save_image_reference_request(req)
+
         for fmt_key, public_url in req.images.items():
             if not public_url:
                 continue
-            # Determine aspect ratio from format key
-            ratio_map = {"feed": "3:4", "story": "9:16", "banner": "16:9", "custom": "1:1"}
             supabase_client.table("generated_images").insert({
                 "project_id": req.projectId,
                 "metaphor_id": req.metaphorId,
                 "format_key": fmt_key,
-                "aspect_ratio": ratio_map.get(fmt_key, "1:1"),
+                "aspect_ratio": req.aspectRatios.get(fmt_key, "1:1"),
                 "storage_path": public_url.split("/")[-1] if public_url else "",
                 "public_url": public_url,
             }).execute()
@@ -621,7 +732,7 @@ async def api_save_images(req: SaveImagesRequest):
 # ─── API: Project History ────────────────────────────────────────────
 
 @app.get("/api/projects")
-async def api_list_projects():
+async def api_list_projects(_: None = Depends(ensure_history_admin)):
     """List all projects, newest first."""
     if not supabase_client:
         return JSONResponse(content=[])
@@ -639,7 +750,7 @@ async def api_list_projects():
 
 
 @app.get("/api/projects/{project_id}")
-async def api_get_project(project_id: str):
+async def api_get_project(project_id: str, _: None = Depends(ensure_history_admin)):
     """Get a single project with its metaphors and images."""
     if not supabase_client:
         raise HTTPException(status_code=503, detail="Persistence disabled")
@@ -675,7 +786,7 @@ async def api_get_project(project_id: str):
 
 
 @app.delete("/api/projects/{project_id}")
-async def api_delete_project(project_id: str):
+async def api_delete_project(project_id: str, _: None = Depends(ensure_history_admin)):
     """Delete a project and all related data (CASCADE handles metaphors + images)."""
     if not supabase_client:
         raise HTTPException(status_code=503, detail="Persistence disabled")
@@ -711,6 +822,7 @@ async def health():
         "service": "Tyrannus AI Media",
         "api_configured": client is not None,
         "persistence_enabled": supabase_client is not None,
+        "history_auth_configured": bool(HISTORY_ADMIN_TOKEN),
     }
 
 

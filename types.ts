@@ -14,6 +14,14 @@ export interface GeneratedImages {
   [key: string]: string | null;
 }
 
+export interface GeneratedImageErrors {
+  [key: string]: {
+    message: string;
+    errorType: string;
+    retryable: boolean;
+  };
+}
+
 export interface GenerationState {
   step: 'input' | 'brainstorm' | 'result';
   isGenerating: boolean;
@@ -29,6 +37,7 @@ export interface AppData {
   metaphors: Metaphor[];
   selectedMetaphorId: string | null;
   generatedImages: GeneratedImages; 
+  generatedImageErrors: GeneratedImageErrors;
   imageSize: ImageSize;
   // Configuration for generation
   selectedFormats: {

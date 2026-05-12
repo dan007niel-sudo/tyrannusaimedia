@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { AppData } from '../types';
 import { ArrowRight, Upload, X, Image as ImageIcon } from 'lucide-react';
 
@@ -11,20 +11,51 @@ interface InputSectionProps {
 
 const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLoading }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const maxUploadBytes = 5 * 1024 * 1024;
+
+  const loadFile = (file: File, resetInput?: () => void) => {
+    if (!file) return;
+
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Bitte JPG, PNG oder WebP verwenden.');
+      resetInput?.();
+      return;
+    }
+
+    if (file.size > maxUploadBytes) {
+      setUploadError('Das Bild ist zu groß. Bitte maximal 5MB hochladen.');
+      resetInput?.();
+      return;
+    }
+
+    setUploadError(null);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setData(prev => ({ ...prev, referenceImage: reader.result as string }));
+    };
+    reader.onerror = () => {
+      setUploadError('Das Bild konnte nicht gelesen werden.');
+      resetInput?.();
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setData(prev => ({ ...prev, referenceImage: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
+    if (file) loadFile(file, () => { e.target.value = ''; });
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) loadFile(file);
   };
 
   const handleRemoveImage = () => {
     setData(prev => ({ ...prev, referenceImage: null }));
+    setUploadError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -118,6 +149,8 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
           {!data.referenceImage ? (
             <div 
               onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
               className="w-full border-2 border-dashed border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 transition-all p-8 flex flex-col items-center justify-center gap-4 cursor-pointer rounded-sm group/upload"
             >
               <div className="p-4 bg-zinc-50 rounded-full group-hover/upload:bg-white transition-colors">
@@ -125,12 +158,12 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-zinc-600">Bild hochladen oder hierher ziehen</p>
-                <p className="text-xs text-zinc-400 mt-1">JPG, PNG bis 5MB</p>
+                <p className="text-xs text-zinc-400 mt-1">JPG, PNG, WebP bis 5MB</p>
               </div>
               <input 
                 ref={fileInputRef}
                 type="file" 
-                accept="image/*" 
+                accept="image/jpeg,image/png,image/webp"
                 className="hidden" 
                 onChange={handleFileChange}
               />
@@ -154,6 +187,11 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
                 Referenz aktiv
               </div>
             </div>
+          )}
+          {uploadError && (
+            <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+              {uploadError}
+            </p>
           )}
         </div>
 

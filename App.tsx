@@ -240,9 +240,12 @@ const App: React.FC = () => {
               <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 hover:text-black">Historie</span>
             </button>
 
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
+            <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
               <div className="w-1.5 h-1.5 bg-[#D6C3A3] animate-pulse"></div>
-              <span className="text-[10px] font-bold uppercase tracking-widest">System Ready</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">
+                <span className="sm:hidden">Ready</span>
+                <span className="hidden sm:inline">System Ready</span>
+              </span>
             </div>
           </div>
         </div>

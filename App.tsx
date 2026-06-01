@@ -6,7 +6,8 @@ import ImageWorkspace from './components/ImageWorkspace';
 import ErrorDisplay, { AppError } from './components/ErrorDisplay';
 import ProjectHistory from './components/ProjectHistory';
 import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
-import { Clock } from 'lucide-react';
+import { Clock, Eye } from 'lucide-react';
+import { createDemoAppData, createDemoImages, DEMO_METAPHORS, isDemoMode } from './utils/demoMode';
 
 // ─── Schule von Tyrannus Logo ────────────────────────────────────────────────
 
@@ -23,28 +24,31 @@ const TyrannusLogo = () => (
 // ─── Main Application ────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>({
-    verse: '',
-    theme: '',
-    userVision: '',
-    referenceImage: null,
-    styleMode: 'classic',
-    metaphors: [],
-    selectedMetaphorId: null,
-    generatedImages: {},
-    generatedImageErrors: {},
-    imageSize: '1K',
-    selectedFormats: {
-      feed: true,
-      story: true,
-      banner: true,
-      custom: false,
-    },
-    customRatio: '1:1',
-  });
+  const demoMode = isDemoMode();
+  const [data, setData] = useState<AppData>(() => demoMode
+    ? createDemoAppData()
+    : {
+      verse: '',
+      theme: '',
+      userVision: '',
+      referenceImage: null,
+      styleMode: 'classic',
+      metaphors: [],
+      selectedMetaphorId: null,
+      generatedImages: {},
+      generatedImageErrors: {},
+      imageSize: '1K',
+      selectedFormats: {
+        feed: true,
+        story: true,
+        banner: true,
+        custom: false,
+      },
+      customRatio: '1:1',
+    });
 
   const [state, setState] = useState<GenerationState>({
-    step: 'input',
+    step: demoMode ? 'result' : 'input',
     isGenerating: false,
     error: null,
   });
@@ -119,6 +123,21 @@ const App: React.FC = () => {
     lastActionRef.current = 'brainstorm';
     clearError();
     setState(prev => ({ ...prev, isGenerating: true, error: null }));
+
+    if (demoMode) {
+      setData(prev => ({
+        ...prev,
+        metaphors: DEMO_METAPHORS,
+        selectedMetaphorId: prev.selectedMetaphorId ?? DEMO_METAPHORS[0].id,
+        generatedImageErrors: {},
+      }));
+      setCurrentProjectId(null);
+      window.setTimeout(() => {
+        setState(prev => ({ ...prev, step: 'brainstorm', isGenerating: false }));
+      }, 250);
+      return;
+    }
+
     try {
       const result = await generateMetaphors(
         data.verse,
@@ -133,7 +152,7 @@ const App: React.FC = () => {
     } catch (error: any) {
       handleError(error);
     }
-  }, [data.verse, data.theme, data.userVision, data.styleMode, data.referenceImage]);
+  }, [data.verse, data.theme, data.userVision, data.styleMode, data.referenceImage, demoMode]);
 
   // ─── Image Generation ────────────────────────────────────────────────────
 
@@ -161,6 +180,22 @@ const App: React.FC = () => {
       return;
     }
 
+    if (demoMode) {
+      const demoImages = createDemoImages();
+      const selectedImages = Object.fromEntries(
+        requests.map((request) => [request.key, demoImages[request.key] ?? demoImages.feed])
+      );
+      window.setTimeout(() => {
+        setData(prev => ({
+          ...prev,
+          generatedImages: selectedImages,
+          generatedImageErrors: {},
+        }));
+        setState(prev => ({ ...prev, step: 'result', isGenerating: false }));
+      }, 250);
+      return;
+    }
+
     try {
       const result = await generateMultiFormatImages(
         selected.visualPrompt,
@@ -176,7 +211,7 @@ const App: React.FC = () => {
     } catch (error: any) {
       handleError(error);
     }
-  }, [data.metaphors, data.selectedMetaphorId, data.imageSize, data.selectedFormats, data.customRatio, data.styleMode, data.referenceImage, currentProjectId]);
+  }, [data.metaphors, data.selectedMetaphorId, data.imageSize, data.selectedFormats, data.customRatio, data.styleMode, data.referenceImage, currentProjectId, demoMode]);
 
   // ─── Render Content ──────────────────────────────────────────────────────
 
@@ -188,6 +223,7 @@ const App: React.FC = () => {
           setData={setData}
           onNext={handleBrainstorm}
           isLoading={state.isGenerating}
+          isDemoMode={demoMode}
         />
       );
     }
@@ -199,6 +235,7 @@ const App: React.FC = () => {
           onGenerate={handleGenerateImage}
           onBack={() => setState(s => ({ ...s, step: 'input' }))}
           isLoading={state.isGenerating}
+          isDemoMode={demoMode}
         />
       );
     }
@@ -208,11 +245,12 @@ const App: React.FC = () => {
           data={data}
           setData={setData}
           onBack={() => setState(s => ({ ...s, step: 'brainstorm' }))}
+          isDemoMode={demoMode}
         />
       );
     }
 
-    return <InputSection data={data} setData={setData} onNext={handleBrainstorm} isLoading={state.isGenerating} />;
+    return <InputSection data={data} setData={setData} onNext={handleBrainstorm} isLoading={state.isGenerating} isDemoMode={demoMode} />;
   };
 
   // ─── App Shell ───────────────────────────────────────────────────────────
@@ -232,24 +270,42 @@ const App: React.FC = () => {
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-3">
             {/* History Button */}
-            <button
-              onClick={() => setHistoryOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/70 hover:bg-white border border-black/10 hover:border-black transition-all cursor-pointer"
-            >
-              <Clock size={12} className="text-[#1F3A2E]" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 hover:text-black">Historie</span>
-            </button>
+            {!demoMode ? (
+              <button
+                onClick={() => setHistoryOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/70 hover:bg-white border border-black/10 hover:border-black transition-all cursor-pointer"
+              >
+                <Clock size={12} className="text-[#1F3A2E]" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 hover:text-black">Historie</span>
+              </button>
+            ) : null}
 
             <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
-              <div className="w-1.5 h-1.5 bg-[#D6C3A3] animate-pulse"></div>
+              {demoMode ? (
+                <Eye size={12} aria-hidden="true" />
+              ) : (
+                <div className="w-1.5 h-1.5 bg-[#D6C3A3] animate-pulse"></div>
+              )}
               <span className="text-[10px] font-bold uppercase tracking-widest">
-                <span className="sm:hidden">Ready</span>
-                <span className="hidden sm:inline">System Ready</span>
+                {demoMode ? (
+                  <span>Vorschau</span>
+                ) : (
+                  <>
+                    <span className="sm:hidden">Ready</span>
+                    <span className="hidden sm:inline">System Ready</span>
+                  </>
+                )}
               </span>
             </div>
           </div>
         </div>
       </header>
+
+      {demoMode ? (
+        <div className="border-b border-[#D6C3A3] bg-[#1F3A2E] px-4 py-3 text-center text-xs font-bold uppercase tracking-widest text-white">
+          Besucher-Vorschau: KI-Generierung, Bearbeitung, Speicherung und Historie sind deaktiviert.
+        </div>
+      ) : null}
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-9 md:py-14 flex flex-col items-center justify-center flex-grow">

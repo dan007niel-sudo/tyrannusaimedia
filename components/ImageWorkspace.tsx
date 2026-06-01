@@ -8,9 +8,10 @@ interface ImageWorkspaceProps {
   data: AppData;
   setData: React.Dispatch<React.SetStateAction<AppData>>;
   onBack: () => void;
+  isDemoMode?: boolean;
 }
 
-const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }) => {
+const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, isDemoMode = false }) => {
   // Determine initial view based on what's available
   const availableKeys = Object.keys(data.generatedImages).filter(k => data.generatedImages[k] !== null);
   const [activeKey, setActiveKey] = useState<string>(availableKeys[0] || 'feed');
@@ -40,6 +41,14 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
   };
 
   const handleEdit = async () => {
+    if (isDemoMode) {
+      setEditError({
+        message: 'Bearbeitung ist im Vorschau-Modus deaktiviert. Es wird keine KI-Anfrage ausgelöst.',
+        errorType: 'UNKNOWN',
+        retryable: false,
+      });
+      return;
+    }
     if (!editPrompt || !currentImage) return;
     setIsEditing(true);
     setEditError(null);
@@ -85,6 +94,16 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
             </p>
           </div>
         )}
+        {isDemoMode ? (
+          <div className="mb-5 border border-[#D6C3A3] bg-[#f5f2eb] px-4 py-3 text-[#1F3A2E] rounded-sm">
+            <div className="text-xs font-bold uppercase tracking-widest mb-1">
+              Vorschau-Modus
+            </div>
+            <p className="text-xs leading-relaxed">
+              Diese Bilder sind statische Demo-Platzhalter. Bearbeitung, Speicherung und KI-Generierung sind deaktiviert.
+            </p>
+          </div>
+        ) : null}
         
         {/* Toggle Controls - Dynamic */}
         <div className="flex justify-center mb-6 overflow-x-auto">
@@ -133,7 +152,11 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
         
         {/* Back Button */}
         <div className="absolute top-6 left-6">
-            <button onClick={onBack} className="bg-white text-black p-3 hover:bg-black hover:text-white transition-all shadow-lg border border-black/10">
+            <button
+              onClick={onBack}
+              aria-label="Zurueck zur Auswahl"
+              className="bg-white text-black p-3 hover:bg-black hover:text-white transition-all shadow-lg border border-black/10"
+            >
                 <ChevronLeft size={20} />
             </button>
         </div>
@@ -160,7 +183,8 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
             <textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder="Beschreibe die Änderung (z.B. 'mehr Licht', 'ruhiger Hintergrund', 'stärkerer Fokus')..."
+                placeholder={isDemoMode ? "Bearbeitung ist im Vorschau-Modus deaktiviert." : "Beschreibe die Änderung (z.B. 'mehr Licht', 'ruhiger Hintergrund', 'stärkerer Fokus')..."}
+                disabled={isDemoMode}
                 className="w-full bg-white/78 border border-black/10 p-4 text-sm text-black placeholder-zinc-400 resize-none h-32 focus:border-black outline-none mb-4 font-light transition-colors"
             />
 
@@ -174,10 +198,10 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack }
 
             <button
                 onClick={handleEdit}
-                disabled={!editPrompt || isEditing || !currentImage}
+                disabled={isDemoMode || !editPrompt || isEditing || !currentImage}
                 className="w-full bg-white/72 border border-black/10 hover:border-black text-black text-xs font-bold uppercase tracking-widest py-4 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {isEditing ? <RefreshCw className="animate-spin" size={14} /> : "Änderung Anwenden"}
+                {isEditing ? <RefreshCw className="animate-spin" size={14} /> : isDemoMode ? "Bearbeitung deaktiviert" : "Änderung Anwenden"}
             </button>
         </div>
 

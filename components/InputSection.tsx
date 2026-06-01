@@ -7,9 +7,10 @@ interface InputSectionProps {
   setData: React.Dispatch<React.SetStateAction<AppData>>;
   onNext: () => void;
   isLoading: boolean;
+  isDemoMode?: boolean;
 }
 
-const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLoading }) => {
+const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLoading, isDemoMode = false }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -73,6 +74,12 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
       </div>
 
       <div className="space-y-8 bg-white/72 border border-black/10 p-5 md:p-8">
+        {isDemoMode ? (
+          <div className="border border-[#D6C3A3] bg-[#f5f2eb] px-4 py-3 text-sm font-medium leading-relaxed text-[#1F3A2E]">
+            Vorschau-Modus: Eingaben bleiben lokal. Der Button zeigt vorbereitete Beispielkonzepte und loest keine KI-Anfrage aus.
+          </div>
+        ) : null}
+
         <div className="space-y-3 group">
           <label className="flex items-center gap-2 text-[11px] font-black text-black uppercase tracking-widest">
             Bibelstelle / Referenz
@@ -205,7 +212,9 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
                 <span className="uppercase tracking-widest text-xs animate-pulse">Forme geistlichen Raum...</span>
             ) : (
                 <>
-                <span className="uppercase tracking-widest text-sm">Konzepte Entwickeln</span>
+                <span className="uppercase tracking-widest text-sm">
+                  {isDemoMode ? 'Beispielkonzepte Anzeigen' : 'Konzepte Entwickeln'}
+                </span>
                 <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
                 </>
             )}

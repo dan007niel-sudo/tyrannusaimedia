@@ -8,9 +8,10 @@ interface MetaphorSelectionProps {
   onGenerate: () => void;
   onBack: () => void;
   isLoading: boolean;
+  isDemoMode?: boolean;
 }
 
-const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, onGenerate, onBack, isLoading }) => {
+const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, onGenerate, onBack, isLoading, isDemoMode = false }) => {
   const handleSelect = (id: string) => {
     setData(prev => ({ ...prev, selectedMetaphorId: id }));
   };
@@ -79,6 +80,11 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
 
       {/* Configuration & Controls */}
       <div className="flex flex-col items-center justify-center space-y-8 pt-8 border-t border-black/10">
+         {isDemoMode ? (
+            <div className="w-full max-w-3xl border border-[#D6C3A3] bg-[#f5f2eb] px-4 py-3 text-center text-sm font-medium leading-relaxed text-[#1F3A2E]">
+                Vorschau-Modus: Formatwahl ist erlaubt, aber die Bilder kommen aus statischen Demo-Daten.
+            </div>
+         ) : null}
 
          <div className="w-full max-w-3xl space-y-6">
             <div className="flex items-center justify-center gap-2 text-black mb-4">
@@ -168,8 +174,8 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
         >
           {isLoading ? (
              <><Loader2 className="animate-spin" /> <span className="uppercase tracking-widest text-xs">Erweckung sichtbar machen...</span></>
-          ) : (
-            <><ImageIcon size={18} /> <span className="uppercase tracking-widest text-xs">Ausgewählte Formate Generieren</span></>
+         ) : (
+            <><ImageIcon size={18} /> <span className="uppercase tracking-widest text-xs">{isDemoMode ? 'Demo-Formate Anzeigen' : 'Ausgewählte Formate Generieren'}</span></>
           )}
         </button>
       </div>

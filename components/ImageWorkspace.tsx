@@ -11,6 +11,26 @@ interface ImageWorkspaceProps {
   isDemoMode?: boolean;
 }
 
+function dataUriToBlob(dataUri: string): Blob {
+  const separator = dataUri.indexOf(',');
+  if (separator < 0) throw new Error('Ungültige Bilddaten.');
+
+  const header = dataUri.slice(0, separator);
+  const payload = dataUri.slice(separator + 1);
+  const mimeType = header.match(/^data:([^;,]+)/)?.[1] || 'image/png';
+
+  if (header.includes(';base64')) {
+    const binary = window.atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
+}
+
 const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, isDemoMode = false }) => {
   // Determine initial view based on what's available
   const availableKeys = Object.keys(data.generatedImages).filter(k => data.generatedImages[k] !== null);
@@ -19,6 +39,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
   const [editPrompt, setEditPrompt] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editError, setEditError] = useState<AppError | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const currentImage = data.generatedImages[activeKey];
   const currentGenerationError = data.generatedImageErrors[activeKey];
@@ -30,14 +51,59 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
     }
   }, [availableKeys.join('|'), activeKey]);
 
-  const handleDownload = () => {
+  const getDownloadFilename = (mimeType = 'image/png') => {
+    const extension = mimeType === 'image/jpeg'
+      ? 'jpg'
+      : mimeType === 'image/webp'
+        ? 'webp'
+        : mimeType === 'image/svg+xml'
+          ? 'svg'
+          : 'png';
+    return `tyrannus-media-${activeKey}-${Date.now()}.${extension}`;
+  };
+
+  const currentDownloadHref = currentImage?.startsWith('https://')
+    ? `/api/download-image?${new URLSearchParams({
+        url: currentImage,
+        filename: getDownloadFilename(),
+      }).toString()}`
+    : null;
+
+  const handleEmbeddedImageDownload = async () => {
     if (!currentImage) return;
-    const link = document.createElement('a');
-    link.href = currentImage;
-    link.download = `tyrannus-media-${activeKey}-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setDownloadError(null);
+
+    try {
+      const blob = dataUriToBlob(currentImage);
+      const file = new File([blob], getDownloadFilename(blob.type), { type: blob.type });
+      const canShareFile = typeof navigator.share === 'function'
+        && typeof navigator.canShare === 'function'
+        && navigator.maxTouchPoints > 0
+        && navigator.canShare({ files: [file] });
+
+      if (canShareFile) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'Tyrannus Media Bild',
+          });
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+        }
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      setDownloadError('Das Bild konnte nicht gespeichert werden. Bitte versuche es erneut.');
+    }
   };
 
   const handleEdit = async () => {
@@ -63,6 +129,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
           }
       }));
       setEditPrompt('');
+      setDownloadError(null);
     } catch (err) {
       setEditError(extractAppError(err));
     } finally {
@@ -207,12 +274,24 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
 
         {/* Action Buttons */}
         <div className="pt-8 border-t border-black/10">
-            <button
-                onClick={handleDownload}
-                className="w-full bg-black hover:bg-[#1F3A2E] text-white font-bold py-5 shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-95"
-            >
-                <Download size={18} /> <span className="uppercase tracking-widest text-xs">Download {getLabel(activeKey).text}</span>
-            </button>
+            {downloadError ? (
+              <p className="mb-3 text-sm text-red-700" role="alert">{downloadError}</p>
+            ) : null}
+            {currentDownloadHref ? (
+              <a
+                  href={currentDownloadHref}
+                  className="w-full bg-black hover:bg-[#1F3A2E] text-white font-bold py-5 shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-95"
+              >
+                  <Download size={18} /> <span className="uppercase tracking-widest text-xs">Download {getLabel(activeKey).text}</span>
+              </a>
+            ) : (
+              <button
+                  onClick={handleEmbeddedImageDownload}
+                  className="w-full bg-black hover:bg-[#1F3A2E] text-white font-bold py-5 shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-95"
+              >
+                  <Download size={18} /> <span className="uppercase tracking-widest text-xs">Speichern {getLabel(activeKey).text}</span>
+              </button>
+            )}
         </div>
 
       </div>

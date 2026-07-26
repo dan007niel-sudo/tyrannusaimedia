@@ -1,6 +1,8 @@
 import base64
 import json
 import unittest
+from email.message import Message
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -67,6 +69,14 @@ class SaveImageReferenceGuardTests(unittest.TestCase):
                 aspectRatios={"feed": "3:4"},
             ))
 
+    def test_rejects_other_supabase_storage_bucket(self):
+        with self.assertRaises(ValueError):
+            server.validate_save_image_reference_request(server.SaveImagesRequest(
+                projectId="12345678-1234-5678-1234-567812345678",
+                images={"feed": "https://example.supabase.co/storage/v1/object/public/other/a.png"},
+                aspectRatios={"feed": "3:4"},
+            ))
+
     def test_rejects_lookalike_supabase_hostname(self):
         with self.assertRaises(ValueError):
             server.validate_save_image_reference_request(server.SaveImagesRequest(
@@ -127,6 +137,65 @@ class HistoryAuthTests(unittest.TestCase):
         })
 
         self.assertEqual(response.status_code, 401)
+
+
+class ImageDownloadTests(unittest.TestCase):
+    def setUp(self):
+        self.original_supabase_url = server.SUPABASE_URL
+        server.SUPABASE_URL = "https://example.supabase.co"
+        self.client = TestClient(server.app)
+
+    def tearDown(self):
+        server.SUPABASE_URL = self.original_supabase_url
+
+    def test_download_returns_real_attachment_with_safe_filename(self):
+        headers = Message()
+        headers["Content-Type"] = "image/png"
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return b"png-bytes"
+
+        fake_response = FakeResponse()
+        fake_response.headers = headers
+        image_url = (
+            "https://example.supabase.co/storage/v1/object/public/"
+            "generated-images/abc.png"
+        )
+
+        with patch("server.urlopen", return_value=fake_response):
+            response = self.client.get(
+                "/api/download-image",
+                params={"url": image_url, "filename": "../../Tyrannus Flyer.png"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"png-bytes")
+        self.assertEqual(response.headers["content-type"], "image/png")
+        self.assertEqual(
+            response.headers["content-disposition"],
+            'attachment; filename="Tyrannus-Flyer.png"',
+        )
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+    def test_download_rejects_external_url_before_network_request(self):
+        with patch("server.urlopen") as mocked_urlopen:
+            response = self.client.get(
+                "/api/download-image",
+                params={
+                    "url": "https://evil.test/image.png",
+                    "filename": "flyer.png",
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        mocked_urlopen.assert_not_called()
 
 
 if __name__ == "__main__":

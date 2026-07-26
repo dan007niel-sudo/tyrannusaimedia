@@ -206,7 +206,13 @@ const App: React.FC = () => {
         currentProjectId,
         data.selectedMetaphorId,
       );
-      setData(prev => ({ ...prev, generatedImages: result.images, generatedImageErrors: result.errors }));
+      const displayImages = Object.fromEntries(
+        Object.entries(result.images).map(([key, image]) => [
+          key,
+          result.storedUrls[key] || image,
+        ]),
+      );
+      setData(prev => ({ ...prev, generatedImages: displayImages, generatedImageErrors: result.errors }));
       setState(prev => ({ ...prev, step: 'result', isGenerating: false }));
     } catch (error: any) {
       handleError(error);

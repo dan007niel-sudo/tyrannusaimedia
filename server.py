@@ -10,6 +10,7 @@ import base64
 import asyncio
 import secrets
 import mimetypes
+import re
 import traceback
 import uuid
 from pathlib import Path
@@ -19,7 +20,7 @@ from urllib.request import Request, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from google import genai
@@ -30,7 +31,9 @@ from google.genai import types
 IMAGE_GEN_TIMEOUT_SECONDS = 120  # 2 minutes max per image
 MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_EDIT_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_DOWNLOAD_IMAGE_BYTES = 50 * 1024 * 1024
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+SAFE_DOWNLOAD_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 def classify_gemini_error(error: Exception) -> HTTPException:
     """
@@ -303,29 +306,29 @@ def validate_storage_public_url(public_url: str) -> None:
         raise ValueError("Only HTTPS storage URLs are accepted.")
     if parsed.scheme != base.scheme or parsed.netloc != base.netloc:
         raise ValueError("Storage URL does not belong to the configured Supabase project.")
+    expected_prefix = f"/storage/v1/object/public/{IMAGE_BUCKET}/"
+    if not parsed.path.startswith(expected_prefix):
+        raise ValueError("Storage URL does not belong to the generated image bucket.")
 
 
-def load_edit_image_input(image_input: str) -> tuple[str, bytes]:
-    """Accept a browser data URI or one of our Supabase public image URLs for editing."""
-    if image_input.startswith("data:"):
-        return validate_uploaded_image(image_input, MAX_EDIT_IMAGE_BYTES)
-
-    validate_storage_public_url(image_input)
+def load_storage_image(image_url: str, max_bytes: int) -> tuple[str, bytes]:
+    """Load one generated image from the configured Supabase public bucket."""
+    validate_storage_public_url(image_url)
     try:
-        request = Request(image_input, headers={"User-Agent": "TyrannusAI-Media/1.0"})
+        request = Request(image_url, headers={"User-Agent": "TyrannusAI-Media/1.0"})
         with urlopen(request, timeout=10) as response:
             mime_type = (response.headers.get_content_type() or "").lower()
-            raw_bytes = response.read(MAX_EDIT_IMAGE_BYTES + 1)
+            raw_bytes = response.read(max_bytes + 1)
     except Exception as exc:
         raise structured_error(
             400,
-            "Das gespeicherte Bild konnte nicht für die Bearbeitung geladen werden.",
+            "Das gespeicherte Bild konnte nicht geladen werden.",
             "UPLOAD_INVALID",
             True,
         ) from exc
 
     if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
-        guessed_type, _ = mimetypes.guess_type(urlparse(image_input).path)
+        guessed_type, _ = mimetypes.guess_type(urlparse(image_url).path)
         mime_type = (guessed_type or mime_type).lower()
 
     if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
@@ -337,14 +340,35 @@ def load_edit_image_input(image_input: str) -> tuple[str, bytes]:
         )
     if not raw_bytes:
         raise structured_error(400, "Das gespeicherte Bild ist leer.", "UPLOAD_INVALID", False)
-    if len(raw_bytes) > MAX_EDIT_IMAGE_BYTES:
+    if len(raw_bytes) > max_bytes:
         raise structured_error(
             413,
-            "Das gespeicherte Bild ist zu groß für die Bearbeitung.",
+            "Das gespeicherte Bild ist zu groß.",
             "UPLOAD_TOO_LARGE",
             False,
         )
     return mime_type, raw_bytes
+
+
+def load_edit_image_input(image_input: str) -> tuple[str, bytes]:
+    """Accept a browser data URI or one of our Supabase public image URLs for editing."""
+    if image_input.startswith("data:"):
+        return validate_uploaded_image(image_input, MAX_EDIT_IMAGE_BYTES)
+
+    return load_storage_image(image_input, MAX_EDIT_IMAGE_BYTES)
+
+
+def safe_download_filename(filename: str, mime_type: str) -> str:
+    """Return an ASCII filename with an extension matching the image payload."""
+    extension_by_mime = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+    desired_extension = extension_by_mime[mime_type]
+    stem = Path(filename).stem[:80] or "tyrannus-media"
+    safe_stem = SAFE_DOWNLOAD_FILENAME.sub("-", stem).strip("._-") or "tyrannus-media"
+    return f"{safe_stem}{desired_extension}"
 
 
 def make_data_uri(mime_type: str, raw_bytes: bytes) -> str:
@@ -797,6 +821,37 @@ async def api_save_images(req: SaveImagesRequest, _: None = Depends(ensure_histo
     except Exception as e:
         print(f"⚠️  Save images failed: {e}")
         return JSONResponse(content={"saved": False, "reason": str(e)})
+
+
+# ─── API: Image Download ────────────────────────────────────────────
+
+@app.get("/api/download-image")
+def api_download_image(url: str, filename: str = "tyrannus-media.png"):
+    """
+    Serve a generated image as a real same-origin attachment.
+
+    iOS/iPadOS browsers do not reliably download large data: URLs created by
+    JavaScript. A normal HTTPS response with Content-Disposition works across
+    Safari, Chrome on iOS, and desktop browsers.
+    """
+    try:
+        mime_type, raw_bytes = load_storage_image(url, MAX_DOWNLOAD_IMAGE_BYTES)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Ungültige Bildadresse.") from exc
+
+    download_name = safe_download_filename(filename, mime_type)
+    return Response(
+        content=raw_bytes,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{download_name}"',
+            "Content-Length": str(len(raw_bytes)),
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 # ─── API: Project History ────────────────────────────────────────────

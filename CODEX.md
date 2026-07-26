@@ -93,5 +93,5 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
 - 2026-07-26
   - Symptom: Generierte Bilder liessen sich auf dem Mac herunterladen, auf iPhone und iPad in Safari und Chrome aber nicht verlaesslich speichern.
   - Ursache: Das Frontend ignorierte die bereits gespeicherten HTTPS-Bild-URLs und klickte stattdessen programmatisch einen temporaeren Link auf eine grosse `data:image/...`-URL. iOS/iPadOS behandelt diesen Downloadpfad unzuverlaessig.
-  - Fix: Erfolgreich gespeicherte Bilder werden ueber einen gleichurspruenglichen Download-Endpunkt mit `Content-Disposition: attachment` ausgeliefert; eingebettete oder bearbeitete Bilder nutzen auf Touch-Geraeten das native Teilen-/Speichern-Menue.
+  - Fix: Gespeicherte sowie eingebettete/bearbeitete Bilder werden ueber gleichurspruengliche Download-Endpunkte mit `Content-Disposition: attachment` ausgeliefert; der native Teilen-/Speichern-Dialog bleibt als Demo-Rueckfall erhalten.
   - Praevention/Test: Backend-Regressionstests pruefen Attachment-Header, sicheren Dateinamen und URL-Allowlisting; Release-QA prueft Download auf Desktop- und Mobile-Viewport.

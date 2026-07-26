@@ -16,9 +16,9 @@ import uuid
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request as URLRequest, urlopen
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -32,6 +32,7 @@ IMAGE_GEN_TIMEOUT_SECONDS = 120  # 2 minutes max per image
 MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_EDIT_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_DOWNLOAD_IMAGE_BYTES = 50 * 1024 * 1024
+MAX_DOWNLOAD_FORM_BYTES = ((MAX_DOWNLOAD_IMAGE_BYTES + 2) // 3) * 4 + 1024
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 SAFE_DOWNLOAD_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -315,7 +316,7 @@ def load_storage_image(image_url: str, max_bytes: int) -> tuple[str, bytes]:
     """Load one generated image from the configured Supabase public bucket."""
     validate_storage_public_url(image_url)
     try:
-        request = Request(image_url, headers={"User-Agent": "TyrannusAI-Media/1.0"})
+        request = URLRequest(image_url, headers={"User-Agent": "TyrannusAI-Media/1.0"})
         with urlopen(request, timeout=10) as response:
             mime_type = (response.headers.get_content_type() or "").lower()
             raw_bytes = response.read(max_bytes + 1)
@@ -849,6 +850,46 @@ def api_download_image(url: str, filename: str = "tyrannus-media.png"):
             "Content-Disposition": f'attachment; filename="{download_name}"',
             "Content-Length": str(len(raw_bytes)),
             "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.post("/api/download-embedded-image")
+async def api_download_embedded_image(
+    request: Request,
+    filename: str = "tyrannus-media.png",
+):
+    """Turn a generated data URI into a normal attachment without browser-side blobs."""
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_DOWNLOAD_FORM_BYTES:
+            raise HTTPException(status_code=413, detail="Das Bild ist zu groß.")
+        body.extend(chunk)
+
+    prefix = b"image_data="
+    if not body.startswith(prefix):
+        raise HTTPException(status_code=400, detail="Ungültige Bilddaten.")
+
+    try:
+        image_data = bytes(body[len(prefix):]).rstrip(b"\r\n").decode("ascii")
+        mime_type, raw_bytes = validate_uploaded_image(
+            image_data,
+            MAX_DOWNLOAD_IMAGE_BYTES,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Ungültige Bilddaten.") from exc
+
+    download_name = safe_download_filename(filename, mime_type)
+    return Response(
+        content=raw_bytes,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{download_name}"',
+            "Content-Length": str(len(raw_bytes)),
+            "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
     )

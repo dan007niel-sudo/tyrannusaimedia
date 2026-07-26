@@ -284,6 +284,22 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
               >
                   <Download size={18} /> <span className="uppercase tracking-widest text-xs">Download {getLabel(activeKey).text}</span>
               </a>
+            ) : currentImage?.startsWith('data:') && !isDemoMode ? (
+              <form
+                  action={`/api/download-embedded-image?${new URLSearchParams({
+                    filename: getDownloadFilename(),
+                  }).toString()}`}
+                  method="post"
+                  encType="text/plain"
+              >
+                <input type="hidden" name="image_data" value={currentImage} />
+                <button
+                    type="submit"
+                    className="w-full bg-black hover:bg-[#1F3A2E] text-white font-bold py-5 shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-95"
+                >
+                    <Download size={18} /> <span className="uppercase tracking-widest text-xs">Download {getLabel(activeKey).text}</span>
+                </button>
+              </form>
             ) : (
               <button
                   onClick={handleEmbeddedImageDownload}

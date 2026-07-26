@@ -90,3 +90,8 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
   - Ursache: Header nutzte ein rekonstruiertes SVG und die App nutzte Inter statt Creato Display als Basisschrift.
   - Fix: Originales Logo-PNG byte-identisch eingebunden, Creato Display lokal als Webfont ergaenzt und die Markenvision in UI und Prompt-Sprache aufgenommen.
   - Praevention/Test: Bei Brand-Aenderungen Logo-Hash gegen die Quelldatei und PDF-Fontliste pruefen.
+- 2026-07-26
+  - Symptom: Generierte Bilder liessen sich auf dem Mac herunterladen, auf iPhone und iPad in Safari und Chrome aber nicht verlaesslich speichern.
+  - Ursache: Das Frontend ignorierte die bereits gespeicherten HTTPS-Bild-URLs und klickte stattdessen programmatisch einen temporaeren Link auf eine grosse `data:image/...`-URL. iOS/iPadOS behandelt diesen Downloadpfad unzuverlaessig.
+  - Fix: Erfolgreich gespeicherte Bilder werden ueber einen gleichurspruenglichen Download-Endpunkt mit `Content-Disposition: attachment` ausgeliefert; eingebettete oder bearbeitete Bilder nutzen auf Touch-Geraeten das native Teilen-/Speichern-Menue.
+  - Praevention/Test: Backend-Regressionstests pruefen Attachment-Header, sicheren Dateinamen und URL-Allowlisting; Release-QA prueft Download auf Desktop- und Mobile-Viewport.

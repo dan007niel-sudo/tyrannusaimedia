@@ -197,6 +197,35 @@ class ImageDownloadTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         mocked_urlopen.assert_not_called()
 
+    def test_embedded_download_returns_attachment(self):
+        image_data = data_uri("image/webp", b"webp-bytes")
+        response = self.client.post(
+            "/api/download-embedded-image",
+            params={"filename": "Story Export.png"},
+            content=f"image_data={image_data}\r\n".encode("ascii"),
+            headers={"Content-Type": "text/plain"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"webp-bytes")
+        self.assertEqual(response.headers["content-type"], "image/webp")
+        self.assertEqual(
+            response.headers["content-disposition"],
+            'attachment; filename="Story-Export.webp"',
+        )
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_embedded_download_rejects_non_image_payload(self):
+        image_data = data_uri("text/html", b"<script>alert(1)</script>")
+        response = self.client.post(
+            "/api/download-embedded-image",
+            params={"filename": "unsafe.html"},
+            content=f"image_data={image_data}\r\n".encode("ascii"),
+            headers={"Content-Type": "text/plain"},
+        )
+
+        self.assertEqual(response.status_code, 415)
+
 
 if __name__ == "__main__":
     unittest.main()

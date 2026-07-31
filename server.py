@@ -8,9 +8,13 @@ import os
 import json
 import base64
 import asyncio
+import functools
 import secrets
 import mimetypes
 import re
+import shutil
+import tempfile
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -18,13 +22,15 @@ from typing import Literal
 from urllib.parse import urlparse
 from urllib.request import Request as URLRequest, urlopen
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from google import genai
 from google.genai import types
+
+import motion_render
 
 # ─── Error Classification ─────────────────────────────────────────────────────
 
@@ -174,6 +180,10 @@ else:
     print("⚠️  SUPABASE_URL/SUPABASE_KEY not set. Persistence disabled.")
 
 IMAGE_BUCKET = "generated-images"
+# Videos werden hierhin gespiegelt, wenn der Bucket existiert. Ohne ihn laeuft
+# die Funktion trotzdem — die Clips haengen dann nur am Job und verfallen mit
+# ihm (MOTION_JOB_TTL).
+MOTION_BUCKET = os.environ.get("MOTION_BUCKET", "generated-motion")
 
 # ─── Constants (from original constants.ts) ───────────────────────────────────
 
@@ -360,11 +370,20 @@ def load_edit_image_input(image_input: str) -> tuple[str, bytes]:
 
 
 def safe_download_filename(filename: str, mime_type: str) -> str:
-    """Return an ASCII filename with an extension matching the image payload."""
+    """
+    Return an ASCII filename with an extension matching the payload.
+
+    Die Endung kommt IMMER aus dem geprueften MIME-Typ, nie aus dem
+    uebergebenen Namen. Ohne passende Endung landet die Datei auf iPhone und
+    iPad ohne Typ im Downloads-Ordner und laesst sich nicht oeffnen (siehe
+    PR #2/#3). Video gehoert deshalb genauso in diese Tabelle wie Bild —
+    ein fehlender Eintrag ist hier kein Fallback, sondern ein KeyError.
+    """
     extension_by_mime = {
         "image/jpeg": ".jpg",
         "image/png": ".png",
         "image/webp": ".webp",
+        "video/mp4": ".mp4",
     }
     desired_extension = extension_by_mime[mime_type]
     stem = Path(filename).stem[:80] or "tyrannus-media"
@@ -989,7 +1008,436 @@ async def health():
         "api_configured": client is not None,
         "persistence_enabled": supabase_client is not None,
         "history_auth_configured": bool(HISTORY_ADMIN_TOKEN),
+        "motion_available": motion_available(),
     }
+
+
+# ─── API: Motion (Flyer → Bewegtbild, Stufe „Ambient") ───────────────────
+#
+# Bewusst als Job und nicht als synchroner Request: das Rendern dauert auf
+# Render Free (0,1 CPU) deutlich laenger als ein Browser-Request warten sollte,
+# und die generative Stufe „Cinematic" braucht spaeter ohnehin Minuten. Der
+# Client legt einen Job an und pollt.
+#
+# Jobs liegen im Prozessspeicher, nicht in der Datenbank. Das ist fuer v1
+# bewusst so: die Instanz ist ein einzelner Prozess, Jobs leben Minuten, und ein
+# Neustart darf sie verlieren. Sobald mehr als eine Instanz laeuft oder Veo
+# dazukommt, muss der Zustand nach Supabase — dann zaehlt der Job auch Geld,
+# und ein verlorener Job kostet echtes Budget.
+
+class MotionJobRequest(BaseModel):
+    image: str = Field(..., description="Flyer als Base64-Data-URI")
+    presets: list[str] = Field(default_factory=lambda: list(motion_render.DEFAULT_PRESETS))
+    formats: list[str] = Field(default_factory=lambda: list(motion_render.ALL_FORMATS))
+    duration: float = motion_render.DEFAULT_DURATION
+    shortEdge: int = motion_render.DEFAULT_SHORT_EDGE
+    bannerOffset: float = 0.5
+
+
+MAX_MOTION_UPLOAD_BYTES = 12 * 1024 * 1024
+# Base64 blaeht um ~4/3 auf, dazu etwas Luft fuer den JSON-Rahmen.
+MOTION_MAX_BODY_BYTES = int(MAX_MOTION_UPLOAD_BYTES * 4 / 3) + 64 * 1024
+MOTION_JOB_TTL_SECONDS = int(os.environ.get("MOTION_JOB_TTL", "1800"))
+# Gleichzeitig wartend oder laufend. Bei Semaphore(1) heisst „6" schon: der
+# sechste steht hinter fuenf seriellen Renders.
+MOTION_MAX_ACTIVE_JOBS = int(os.environ.get("MOTION_MAX_ACTIVE_JOBS", "3"))
+# Insgesamt gehaltene Jobs inklusive fertiger. Ohne dieses Limit waere die Zahl
+# der Verzeichnisse mit fertigen MP4s bis zur TTL nach oben offen.
+MOTION_MAX_RETAINED_JOBS = int(os.environ.get("MOTION_MAX_RETAINED_JOBS", "24"))
+
+_motion_jobs: dict[str, dict] = {}
+# Genau EIN Renderprozess gleichzeitig. Zwei parallele ffmpeg-Laeufe reissen die
+# 512 MB der Free-Instanz, und bei 0,1 CPU macht Parallelitaet ohnehin nichts
+# schneller — sie macht nur beide Jobs langsam.
+_motion_semaphore = asyncio.Semaphore(1)
+
+
+def motion_available() -> bool:
+    try:
+        motion_render.ffmpeg_bin()
+        motion_render.ffprobe_bin()
+        return True
+    except motion_render.MotionError:
+        return False
+
+
+def _motion_discard(job_id: str) -> None:
+    """Job samt Verzeichnis entfernen. Muss auf JEDEM Endzustand laufen, sonst
+    bleiben Quelldatei (bis 12 MB) und Zwischenbilder auf der Platte liegen."""
+    job = _motion_jobs.pop(job_id, None)
+    if job:
+        shutil.rmtree(job["dir"], ignore_errors=True)
+
+
+def _motion_cleanup_expired() -> None:
+    """
+    Abgelaufene Jobs samt Dateien entfernen — die Instanz hat keinen Platz fuer
+    Videos, die niemand mehr abholt.
+
+    Laufende und wartende Jobs sind ausgenommen. Die TTL zaehlt ab
+    FERTIGSTELLUNG, nicht ab Anlage: bei 0,1 CPU und seriellem Rendern kann ein
+    Job laenger in der Warteschlange stehen als die TTL lang ist. Wuerde hier
+    nach `created_at` aufgeraeumt, risse man einem laufenden Job das
+    Arbeitsverzeichnis unter den Fuessen weg — ffmpeg liefe weiter und
+    verbrauchte die einzige CPU, der Client bekaeme ab da 404.
+    """
+    now = time.time()
+    for job_id, job in list(_motion_jobs.items()):
+        if job["status"] in ("queued", "running"):
+            continue
+        finished_at = job.get("finished_at") or job["created_at"]
+        if now - finished_at < MOTION_JOB_TTL_SECONDS:
+            continue
+        _motion_discard(job_id)
+
+
+def _motion_public_job(job: dict) -> dict:
+    return {
+        "jobId": job["id"],
+        "status": job["status"],
+        "progress": job["progress"],
+        "presets": job["presets"],
+        "results": job["results"],
+        "error": job["error"],
+    }
+
+
+async def _motion_run(
+    job_id: str,
+    src_path: Path,
+    req: "motion_render.RenderRequest",
+    src_info: "motion_render.SourceInfo",
+) -> None:
+    job = _motion_jobs[job_id]
+    async with _motion_semaphore:
+        # Der Job kann waehrend der Wartezeit abgelaufen und aufgeraeumt worden
+        # sein. Dann gibt es kein Verzeichnis mehr, in das gerendert werden
+        # koennte — hier abbrechen statt ins Leere schreiben.
+        if _motion_jobs.get(job_id) is not job:
+            return
+        job["status"] = "running"
+
+        def progress(index: int, total: int, fmt: str) -> None:
+            job["progress"] = {
+                "done": index,
+                "total": total,
+                "current": motion_render.FORMAT_LABEL.get(fmt, fmt),
+            }
+
+        try:
+            # ffmpeg blockiert; ohne den Thread steht der Event-Loop und die
+            # Statusabfrage des Clients bekommt keine Antwort mehr.
+            clips = await asyncio.to_thread(
+                functools.partial(
+                    motion_render.render_all,
+                    src_path, Path(job["dir"]), req,
+                    measure=False, on_progress=progress, src=src_info,
+                )
+            )
+        except motion_render.MotionError as exc:
+            _motion_fail(job, exc.message)
+            print(f"⚠️  Motion job {job_id} failed: {exc.message} | {exc.detail}")
+            return
+        except Exception as exc:  # noqa: BLE001
+            _motion_fail(job, "Beim Rendern ist ein unerwarteter Fehler aufgetreten.")
+            print(f"⚠️  Motion job {job_id} crashed: {exc}")
+            traceback.print_exc()
+            return
+
+        results = []
+        for clip in clips:
+            entry = {
+                "format": clip.fmt,
+                "label": motion_render.FORMAT_LABEL[clip.fmt],
+                "width": clip.width,
+                "height": clip.height,
+                "duration": clip.duration,
+                "seconds": round(clip.seconds_spent, 1),
+                "url": f"/api/motion/jobs/{job_id}/video?format={clip.fmt}",
+                "publicUrl": None,
+            }
+            if supabase_client:
+                # Der Supabase-Client ist synchron; der Upload ist ein
+                # blockierender HTTP-Call. Ohne den Thread stuende der
+                # Event-Loop fuer bis zu drei Videos nacheinander still — genau
+                # der Grund, aus dem schon das Rendern ausgelagert ist. Die
+                # Statusabfrage des Clients bekaeme so lange keine Antwort.
+                entry["publicUrl"] = await asyncio.to_thread(
+                    _motion_upload, clip, job_id,
+                )
+            results.append(entry)
+
+        job["results"] = results
+        job["progress"] = {"done": len(clips), "total": len(clips), "current": None}
+        job["status"] = "done"
+        job["finished_at"] = time.time()
+        src_path.unlink(missing_ok=True)
+
+
+def _motion_fail(job: dict, message: str) -> None:
+    """
+    Job als gescheitert markieren und die Zwischenstaende wegraeumen.
+
+    Ohne das Aufraeumen bleibt bei jedem Fehlschlag die Quelldatei (bis 12 MB)
+    plus alle Zwischenbilder liegen, bis die TTL greift — auf einer Instanz mit
+    fluechtiger, kleiner Platte summiert sich das schnell.
+    """
+    job["status"] = "failed"
+    job["error"] = message
+    job["finished_at"] = time.time()
+    for leftover in Path(job["dir"]).glob("*"):
+        if leftover.is_file():
+            leftover.unlink(missing_ok=True)
+
+
+def _motion_upload(clip, job_id: str) -> str | None:
+    """Nach Supabase hochladen, wenn ein Bucket konfiguriert ist. Fehler sind
+    nicht fatal — das Video ist ueber den Job-Endpunkt ohnehin erreichbar."""
+    try:
+        path = f"{job_id}_{clip.fmt}.mp4"
+        supabase_client.storage.from_(MOTION_BUCKET).upload(
+            path=path,
+            file=clip.path.read_bytes(),
+            file_options={"content-type": "video/mp4", "upsert": "true"},
+        )
+        return supabase_client.storage.from_(MOTION_BUCKET).get_public_url(path)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️  Motion upload failed for {clip.fmt}: {e}")
+        return None
+
+
+@app.post("/api/motion/jobs")
+async def api_motion_create_job(request: Request):
+    """Legt einen Renderjob an und gibt sofort die Job-ID zurueck."""
+    if not motion_available():
+        raise structured_error(
+            503,
+            "Die Bewegtbild-Funktion ist auf diesem Server nicht verfügbar "
+            "(ffmpeg fehlt).",
+            "MOTION_UNAVAILABLE",
+            False,
+        )
+
+    # Der Demo-Modus darf keine Rechenzeit verbrauchen. Der Header ist
+    # kooperativ — die echte Bremse sind MOTION_MAX_ACTIVE_JOBS und das
+    # Ein-Prozess-Limit darunter.
+    if request.headers.get("X-Demo-Mode") == "1":
+        raise structured_error(
+            403,
+            "Im Demo-Modus werden keine Videos gerendert.",
+            "DEMO_MODE",
+            False,
+        )
+
+    # Gegendruck VOR dem Einlesen des Bodys.
+    #
+    # Ein Flyer als Base64 ist ~16 MB Rohbody; kommt der Request erst durch die
+    # Modellvalidierung, liegen Rohbody, geparster String und dekodierte Bytes
+    # gleichzeitig im Speicher — rund 45 MB pro Request. Auf einer 512-MB-Instanz
+    # reichen zehn gleichzeitige Uploads fuer den OOM-Kill des einzigen Workers,
+    # samt aller laufenden Jobs. Deshalb zuerst Content-Length und Auslastung
+    # pruefen und erst danach ueberhaupt lesen.
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MOTION_MAX_BODY_BYTES:
+        raise structured_error(
+            413,
+            "Der Flyer ist zu groß. Bitte maximal 12 MB hochladen.",
+            "UPLOAD_TOO_LARGE",
+            False,
+        )
+
+    _motion_cleanup_expired()
+    active = sum(1 for j in _motion_jobs.values() if j["status"] in ("queued", "running"))
+    if active >= MOTION_MAX_ACTIVE_JOBS:
+        raise structured_error(
+            429,
+            "Gerade laufen zu viele Renderjobs. Bitte versuch es in ein paar "
+            "Minuten noch einmal.",
+            "MOTION_BUSY",
+            True,
+        )
+    if len(_motion_jobs) >= MOTION_MAX_RETAINED_JOBS:
+        raise structured_error(
+            429,
+            "Es liegen zu viele fertige Videos auf dem Server. Bitte versuch es "
+            "in ein paar Minuten noch einmal.",
+            "MOTION_BUSY",
+            True,
+        )
+
+    raw_body = await request.body()
+    if len(raw_body) > MOTION_MAX_BODY_BYTES:
+        raise structured_error(
+            413,
+            "Der Flyer ist zu groß. Bitte maximal 12 MB hochladen.",
+            "UPLOAD_TOO_LARGE",
+            False,
+        )
+    try:
+        req = MotionJobRequest.model_validate_json(raw_body)
+    except Exception as exc:  # noqa: BLE001
+        raise structured_error(
+            400, "Die Anfrage konnte nicht gelesen werden.", "MOTION_INVALID", False,
+        ) from exc
+
+    mime_type, raw_bytes = validate_uploaded_image(req.image, MAX_MOTION_UPLOAD_BYTES)
+
+    try:
+        render_req = motion_render.RenderRequest(
+            presets=tuple(req.presets),
+            formats=tuple(req.formats),
+            duration=req.duration,
+            short_edge=req.shortEdge,
+            banner_offset=req.bannerOffset,
+        ).validated()
+    except motion_render.MotionError as exc:
+        raise structured_error(400, exc.message, "MOTION_INVALID", False)
+
+    job_id = str(uuid.uuid4())
+    job_dir = Path(tempfile.mkdtemp(prefix=f"motion-{job_id[:8]}-"))
+    suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[mime_type]
+    src_path = job_dir / f"source{suffix}"
+    src_path.write_bytes(raw_bytes)
+
+    # Quelle sofort pruefen, damit ein abgeschnittenes JPEG als klarer Fehler
+    # zurueckkommt und nicht erst nach Minuten im Job auftaucht. Das Ergebnis
+    # wird an den Job durchgereicht — die Pruefung dekodiert das Bild komplett,
+    # und ein zweiter Durchlauf im Renderer wuerde diese Kosten auf 0,1 CPU
+    # ohne Gegenwert verdoppeln.
+    try:
+        src_info = await asyncio.to_thread(motion_render.probe_source, src_path)
+    except motion_render.MotionError as exc:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise structured_error(400, exc.message, "MOTION_SOURCE_INVALID", False) from exc
+
+    job = {
+        "id": job_id,
+        "dir": str(job_dir),
+        "status": "queued",
+        "progress": {"done": 0, "total": len(render_req.formats), "current": None},
+        "presets": list(render_req.presets),
+        "results": [],
+        "error": None,
+        "created_at": time.time(),
+        "finished_at": None,
+        "task": None,
+    }
+    _motion_jobs[job_id] = job
+
+    # Referenz festhalten: der Event-Loop haelt Tasks nur schwach, ein sonst
+    # unreferenzierter Task kann mitten im Lauf vom GC eingesammelt werden. Der
+    # Job haengt dann fuer immer auf „queued" und der Client pollt ins Leere.
+    # `_motion_public_job` waehlt die Felder explizit aus, das Task-Objekt
+    # landet also nicht in der Antwort.
+    job["task"] = asyncio.create_task(
+        _motion_run(job_id, src_path, render_req, src_info)
+    )
+    return JSONResponse(content=_motion_public_job(job), status_code=202)
+
+
+@app.get("/api/motion/jobs/{job_id}")
+async def api_motion_job_status(job_id: str):
+    # Auch hier aufraeumen: wuerde nur der POST-Handler putzen, gaebe eine
+    # ruhige Woche ohne neuen Job den Platz nie wieder frei — und genau so
+    # wird das Werkzeug benutzt, naemlich einmal pro Woche.
+    _motion_cleanup_expired()
+
+    job = _motion_jobs.get(job_id)
+    if not job:
+        raise structured_error(
+            404,
+            "Dieser Renderauftrag ist nicht mehr verfügbar. Bitte erzeuge das "
+            "Bewegtbild neu.",
+            "MOTION_JOB_GONE",
+            False,
+        )
+    return JSONResponse(content=_motion_public_job(job))
+
+
+@app.get("/api/motion/jobs/{job_id}/video")
+async def api_motion_video(
+    job_id: str,
+    format: str = Query(..., alias="format"),
+    download: int = 0,
+):
+    """
+    Liefert ein fertiges Video aus. `download=1` erzwingt den Download.
+
+    Content-Disposition mit explizitem Dateinamen ist auf iPhone/iPad Pflicht —
+    ohne ihn landet die Datei ohne Endung im Downloads-Ordner und laesst sich
+    nicht oeffnen (gleiche Fallstricke wie bei den Bild-Downloads, PR #2/#3).
+    """
+    job = _motion_jobs.get(job_id)
+    if not job:
+        raise structured_error(
+            404,
+            "Dieser Renderauftrag ist nicht mehr verfügbar. Bitte erzeuge das "
+            "Bewegtbild neu.",
+            "MOTION_JOB_GONE",
+            False,
+        )
+    # Gegen die Enum pruefen, BEVOR der Wert in einen Pfad geht.
+    if format not in motion_render.ALL_FORMATS:
+        raise structured_error(400, "Unbekanntes Format.", "MOTION_INVALID", False)
+
+    path = Path(job["dir"]) / f"{format}.mp4"
+    if not path.is_file():
+        raise structured_error(
+            404, "Dieses Video ist noch nicht fertig.", "MOTION_PENDING", True,
+        )
+
+    headers = {}
+    if download:
+        filename = safe_download_filename(f"tyrannus-{format}.mp4", "video/mp4")
+        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return FileResponse(str(path), media_type="video/mp4", headers=headers)
+
+
+@app.get("/api/motion/bench")
+async def api_motion_bench(_: None = Depends(ensure_history_admin)):
+    """
+    Misst die reine Renderzeit auf DIESER Instanz.
+
+    Der Grund fuer diesen Endpunkt: lokal auf einem M-Serie-Mac rechnet ffmpeg
+    mit ~235 % CPU, Render Free hat 0,1 CPU. Wie gross der Faktor wirklich ist,
+    laesst sich nicht schaetzen — nur messen. Von dieser Zahl haengt ab, ob
+    720p reicht oder ob der Plan gewechselt werden muss.
+    """
+    if not motion_available():
+        raise structured_error(503, "ffmpeg ist nicht verfügbar.", "MOTION_UNAVAILABLE", False)
+
+    results = []
+    with tempfile.TemporaryDirectory(prefix="motion-bench-") as raw_tmp:
+        tmp = Path(raw_tmp)
+        src = tmp / "bench.png"
+        # Synthetische 1080x1350-Quelle — unabhaengig von hochgeladenen Dateien.
+        await asyncio.to_thread(motion_render._run, [
+            motion_render.ffmpeg_bin(), "-y", "-v", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=1080x1350",
+            "-frames:v", "1", str(src),
+        ])
+
+        for short_edge in (720, 1080):
+            req = motion_render.RenderRequest(
+                presets=("atem", "licht"), formats=("feed",),
+                duration=6, short_edge=short_edge,
+            )
+            started = time.monotonic()
+            async with _motion_semaphore:
+                clips = await asyncio.to_thread(
+                    functools.partial(
+                        motion_render.render_all, src, tmp, req, measure=False,
+                    )
+                )
+            results.append({
+                "shortEdge": short_edge,
+                "size": f"{clips[0].width}x{clips[0].height}",
+                "seconds": round(time.monotonic() - started, 1),
+                "bytes": clips[0].path.stat().st_size,
+            })
+            clips[0].path.unlink(missing_ok=True)
+
+    return {"ffmpeg": motion_render.ffmpeg_bin(), "runs": results}
 
 
 # ─── Static File Serving (Production) ────────────────────────────────────

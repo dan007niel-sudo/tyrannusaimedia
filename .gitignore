@@ -6,6 +6,12 @@ __pycache__/
 # Build output
 dist/
 
+# Vendored static ffmpeg/ffprobe (fetched by build.sh, ~150 MB)
+bin/
+
+# Lokale Preview-Konfiguration (enthält maschinenspezifische Interpreter-Pfade)
+.claude/
+
 # Environment
 .env
 .env.local

@@ -19,3 +19,9 @@ services:
         sync: false  # Server-side Supabase key; never expose in frontend
       - key: PYTHON_VERSION
         value: 3.11.11
+      # Bewegtbild (Stufe „Ambient"). Beide optional — ohne sie gelten die
+      # Defaults aus motion_render.py (720p) bzw. build.sh (keine Prüfsumme).
+      - key: MOTION_SHORT_EDGE
+        sync: false  # erst nach der Messung auf der Instanz auf 1080 heben
+      - key: FFMPEG_SHA256
+        sync: false  # prüft den heruntergeladenen ffmpeg-Tarball, wenn gesetzt

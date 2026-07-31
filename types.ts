@@ -23,9 +23,50 @@ export interface GeneratedImageErrors {
 }
 
 export interface GenerationState {
-  step: 'input' | 'brainstorm' | 'result';
+  step: 'input' | 'brainstorm' | 'result' | 'motion';
   isGenerating: boolean;
   error: string | null;
+}
+
+// ─── Bewegtbild (Stufe „Ambient") ────────────────────────────────────────────
+
+/**
+ * `atem` und `licht` sind cosinus-periodisch und schliessen die Schleife
+ * bit-genau. `pushin` ist linear und wird per Ueberblendung geschlossen,
+ * `staub` kostet etwa das Doppelte an Renderzeit — beide sind deshalb nicht
+ * vorausgewaehlt.
+ */
+export type MotionPreset = 'atem' | 'licht' | 'pushin' | 'staub';
+
+/** feed = 4:5 unbeschnitten, story = 9:16 mit Auffüller, banner = 16:9 (Beschnitt). */
+export type MotionFormat = 'feed' | 'story' | 'banner';
+
+export interface MotionResult {
+  format: MotionFormat;
+  label: string;
+  width: number;
+  height: number;
+  duration: number;
+  seconds: number;
+  url: string;
+  publicUrl: string | null;
+}
+
+export interface MotionJob {
+  jobId: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  progress: { done: number; total: number; current: string | null };
+  presets: MotionPreset[];
+  results: MotionResult[];
+  error: string | null;
+}
+
+export interface MotionSettings {
+  presets: MotionPreset[];
+  formats: MotionFormat[];
+  duration: number;
+  /** Vertikale Lage des 16:9-Ausschnitts, 0 = oben, 1 = unten. */
+  bannerOffset: number;
 }
 
 export interface AppData {

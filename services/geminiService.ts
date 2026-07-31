@@ -9,7 +9,7 @@
  * - User-friendly German error messages
  */
 
-import { Metaphor, ImageSize, GeneratedImages, AspectRatio } from "../types";
+import { Metaphor, ImageSize, GeneratedImages, AspectRatio, MotionJob, MotionSettings } from "../types";
 import { AppError } from "../components/ErrorDisplay";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -291,4 +291,103 @@ export const saveImageReferences = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ projectId, metaphorId, images, aspectRatios }),
   }, 10_000);
+};
+
+// ─── Bewegtbild (Stufe „Ambient") ────────────────────────────────────────────
+
+/**
+ * Das Rendern laeuft als Job, nicht als synchroner Request. Auf Render Free
+ * (0,1 CPU) dauert ein Clip deutlich laenger, als ein Browser-Request warten
+ * sollte — und die spaetere generative Stufe braucht ohnehin Minuten.
+ */
+
+const MOTION_CREATE_TIMEOUT_MS = 30_000;
+const MOTION_POLL_TIMEOUT_MS = 10_000;
+const MOTION_POLL_INTERVAL_MS = 2_000;
+/** Wie viele Abfragen hintereinander scheitern duerfen, bevor abgebrochen wird. */
+const MOTION_MAX_POLL_FAILURES = 4;
+/** Obergrenze fuers Warten. Danach laeuft der Job serverseitig zwar weiter,
+ *  die Oberflaeche haengt aber nicht endlos. */
+const MOTION_MAX_WAIT_MS = 15 * 60_000;
+
+export const createMotionJob = async (
+  image: string,
+  settings: MotionSettings,
+  isDemoMode = false,
+): Promise<MotionJob> => {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // Der Server lehnt Demo-Jobs ab; der Header macht die Absicht explizit,
+  // statt sich auf die Oberflaeche zu verlassen.
+  if (isDemoMode) headers["X-Demo-Mode"] = "1";
+
+  const response = await fetchWithTimeout("/api/motion/jobs", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      image,
+      presets: settings.presets,
+      formats: settings.formats,
+      duration: settings.duration,
+      bannerOffset: settings.bannerOffset,
+    }),
+  }, MOTION_CREATE_TIMEOUT_MS);
+  return handleResponse(response);
+};
+
+export const fetchMotionJob = async (jobId: string): Promise<MotionJob> => {
+  const response = await fetchWithTimeout(
+    `/api/motion/jobs/${jobId}`, {}, MOTION_POLL_TIMEOUT_MS,
+  );
+  return handleResponse(response);
+};
+
+/**
+ * Pollt bis der Job fertig ist. `onUpdate` bekommt jeden Zwischenstand, damit
+ * die Oberflaeche zeigen kann, an welchem Format gerade gearbeitet wird.
+ */
+export const waitForMotionJob = async (
+  jobId: string,
+  onUpdate: (job: MotionJob) => void,
+  shouldStop: () => boolean = () => false,
+): Promise<MotionJob> => {
+  const deadline = Date.now() + MOTION_MAX_WAIT_MS;
+  let consecutiveFailures = 0;
+
+  for (;;) {
+    if (shouldStop()) throw createAppError("Abgebrochen.", "UNKNOWN", false);
+    if (Date.now() > deadline) {
+      throw createAppError(
+        "Das Rendern dauert ungewöhnlich lange. Der Job läuft weiter — lad die Seite später neu.",
+        "TIMEOUT",
+        true,
+      );
+    }
+
+    await new Promise(resolve => setTimeout(resolve, MOTION_POLL_INTERVAL_MS));
+
+    let job: MotionJob;
+    try {
+      job = await fetchMotionJob(jobId);
+      consecutiveFailures = 0;
+    } catch (err) {
+      // Ein einzelner 502 oder ein Cold Start auf Render Free darf das Warten
+      // nicht beenden — der Job laeuft serverseitig weiter, und ein Abbruch
+      // hier zeigt dem Nutzer einen Fehler, den es gar nicht gibt. Erst wenn
+      // mehrere Abfragen hintereinander scheitern, ist wirklich etwas kaputt.
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= MOTION_MAX_POLL_FAILURES) throw err;
+      continue;
+    }
+
+    onUpdate(job);
+
+    if (job.status === "done") return job;
+    if (job.status === "failed") {
+      throw createAppError(
+        job.error || "Beim Rendern ist ein Fehler aufgetreten.",
+        "UNKNOWN",
+        true,
+      );
+    }
+  }
 };

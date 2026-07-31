@@ -3,10 +3,11 @@ import { AppData, GenerationState, AspectRatio, Metaphor } from './types';
 import InputSection from './components/InputSection';
 import MetaphorSelection from './components/MetaphorSelection';
 import ImageWorkspace from './components/ImageWorkspace';
+import MotionWorkspace from './components/MotionWorkspace';
 import ErrorDisplay, { AppError } from './components/ErrorDisplay';
 import ProjectHistory from './components/ProjectHistory';
 import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
-import { Clock, Eye } from 'lucide-react';
+import { Clock, Eye, Film } from 'lucide-react';
 import { createDemoAppData, createDemoImages, DEMO_METAPHORS, isDemoMode } from './utils/demoMode';
 
 // ─── Schule von Tyrannus Logo ────────────────────────────────────────────────
@@ -64,6 +65,17 @@ const App: React.FC = () => {
 
   // Current project ID (from Supabase)
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+
+  // Flyer, der im Bewegtbild-Schritt animiert wird. Kommt entweder aus einem
+  // erzeugten Bild oder aus einem eigenen Upload — der zweite Fall ist der
+  // haeufigere: der Flyer existiert meist schon.
+  const [motionSource, setMotionSource] = useState<string | null>(null);
+
+  const openMotion = (source: string | null) => {
+    setMotionSource(source);
+    clearError();
+    setState(prev => ({ ...prev, step: 'motion' }));
+  };
 
   // ─── Error Handling ──────────────────────────────────────────────────────
 
@@ -246,11 +258,33 @@ const App: React.FC = () => {
       );
     }
     if (state.step === 'result') {
+      const firstImage = Object.values(data.generatedImages).find(Boolean) as string | undefined;
       return (
-        <ImageWorkspace
-          data={data}
-          setData={setData}
-          onBack={() => setState(s => ({ ...s, step: 'brainstorm' }))}
+        <div className="w-full">
+          <ImageWorkspace
+            data={data}
+            setData={setData}
+            onBack={() => setState(s => ({ ...s, step: 'brainstorm' }))}
+            isDemoMode={demoMode}
+          />
+          {firstImage && (
+            <div className="mt-10 flex justify-center border-t border-black/10 pt-8">
+              <button
+                onClick={() => openMotion(firstImage)}
+                className="flex items-center gap-2 border border-black px-5 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-black hover:text-white"
+              >
+                <Film size={12} /> Dieses Bild in Bewegung bringen
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (state.step === 'motion') {
+      return (
+        <MotionWorkspace
+          sourceImage={motionSource}
+          onBack={() => setState(s => ({ ...s, step: motionSource ? 'result' : 'input' }))}
           isDemoMode={demoMode}
         />
       );
@@ -325,6 +359,22 @@ const App: React.FC = () => {
           />
         )}
         {renderContent()}
+
+        {/* Eigenstaendiger Einstieg: der woechentliche Fall ist ein Flyer, der
+            schon fertig ist — dafuer braucht es die Konzeptphase nicht. */}
+        {state.step === 'input' && (
+          <div className="mt-10 w-full max-w-3xl border-t border-black/10 pt-8 text-center">
+            <button
+              onClick={() => openMotion(null)}
+              className="inline-flex items-center gap-2 border border-black/20 px-5 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors hover:border-black hover:bg-black hover:text-white"
+            >
+              <Film size={12} /> Fertigen Flyer animieren
+            </button>
+            <p className="mt-2 text-[11px] text-zinc-500">
+              Ohne Konzeptphase: Flyer hochladen, Bewegung wählen, fertig.
+            </p>
+          </div>
+        )}
       </main>
 
       {/* Project History Panel */}

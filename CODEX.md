@@ -95,3 +95,23 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
   - Ursache: Das Frontend ignorierte die bereits gespeicherten HTTPS-Bild-URLs und klickte stattdessen programmatisch einen temporaeren Link auf eine grosse `data:image/...`-URL. iOS/iPadOS behandelt diesen Downloadpfad unzuverlaessig.
   - Fix: Gespeicherte sowie eingebettete/bearbeitete Bilder werden ueber gleichurspruengliche Download-Endpunkte mit `Content-Disposition: attachment` ausgeliefert; der native Teilen-/Speichern-Dialog bleibt als Demo-Rueckfall erhalten.
   - Praevention/Test: Backend-Regressionstests pruefen Attachment-Header, sicheren Dateinamen und URL-Allowlisting; Release-QA prueft Download auf Desktop- und Mobile-Viewport.
+- 2026-08-01
+  - Symptom: Der Bewegtbild-Loop knackte einmal pro Durchlauf sichtbar, obwohl die Zoomkurve cosinus-periodisch und mathematisch exakt geschlossen war.
+  - Ursache: Zwei unabhaengige Faelle, in denen ausgerechnet Frame 0 in ein anderes Verarbeitungsregime faellt. (1) Bei Zoom exakt 1,0 verkleinert ffmpeg die ueberabgetastete Vorlage ohne Resampling — Frame 0 war der einzige „scharfe" Frame im Clip. (2) `eq` hat einen Identitaets-Schnellpfad und ueberspringt sich bei `brightness=0`/`saturation=1` komplett — Frame 0 war der einzige Frame ohne Lichtkurve (YAVG 39,98 statt 38,89).
+  - Fix: `ZOOM_BASE = 1.015`, damit der Zoom nie exakt 1,0 wird; Lichtpuls um null zentriert (`pulse-0.5`) statt bei null startend, damit `eq` auf keinem Frame neutral ist.
+  - Praevention/Test: `test_periodic_presets_loop_exactly` misst die Naht als RMSE gegen einen Nachbarschritt derselben Phase und verlangt bit-genaue Schliessung. Wer an Presets oder Filterkette etwas aendert, misst danach die Naht — Ansehen reicht nicht.
+- 2026-08-01
+  - Symptom: Die Nahtmessung lieferte plausible Zahlen, verglich aber die falschen Frames — der Fehler in Punkt 1 oben wurde dadurch fast uebersehen.
+  - Ursache: `select='eq(n\,0)+eq(n\,239)'` hatte die Kommas escaped UND gequotet. In Anfuehrungszeichen liest ffmpeg `\,` als literales Backslash-Komma, meldet aber keinen Fehler — es laesst dann alle Frames durch, und `-frames:v N` schneidet die ersten N ab. Gemessen wurde also Frame 0 gegen Frame 1.
+  - Fix: Kommas im gequoteten Ausdruck nicht escapen. Zusaetzlich `assert_probe_selection_works()` als Kanarienvogel vor jeder Messung.
+  - Praevention/Test: `test_probe_selection_actually_filters`. Grundsatz: ein Messwerkzeug, das nicht fehlschlagen kann, misst nichts — jede Messkette braucht einen Test, der sie absichtlich scheitern laesst.
+- 2026-08-01
+  - Symptom: Abgeschnittene WhatsApp-JPEGs (Header meldet 1080x1350, Datei ist 16 KB) liefen klaglos durch die Quellpruefung.
+  - Ursache: Die Erkennung suchte nach `Premature end of JPEG file` — das ist ImageMagicks Wortlaut. ffmpeg 8 meldet denselben Defekt als `EOI missing, emulating` und `component 0 is incomplete`.
+  - Fix: `TRUNCATED_MARKERS` deckt beide Wortlaute plus `error while decoding` und `invalid data found` ab; zusaetzlich ein voller Dekodierdurchlauf, weil ffprobe nur den Header liest.
+  - Praevention/Test: `test_real_whatsapp_partial_is_rejected` laeuft gegen die echte kaputte Datei, nicht gegen eine synthetisch abgeschnittene — die synthetische wurde erkannt, die echte nicht. Fehlerstrings immer am Werkzeug verifizieren, das sie tatsaechlich ausgibt.
+- 2026-08-01
+  - Symptom: Der Video-Download antwortete mit 500 statt die Datei zu liefern.
+  - Ursache: `safe_download_filename()` leitet die Endung aus einer festen MIME-Tabelle ab, die nur Bildformate kannte. `video/mp4` loeste einen KeyError aus.
+  - Fix: `video/mp4` in die Tabelle aufgenommen.
+  - Praevention/Test: `test_download_filename_covers_every_served_mime` haelt Tabelle und tatsaechlich ausgelieferte Typen zusammen. Bei neuen Ausgabeformaten immer beide Seiten pruefen.

@@ -226,6 +226,28 @@ class ImageDownloadTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 415)
 
+    def test_download_filename_covers_every_served_mime(self):
+        """
+        Jeder MIME-Typ, den die App zum Download anbietet, braucht hier einen
+        Eintrag — sonst wirft der Endpunkt einen KeyError und liefert 500.
+
+        Genau das ist passiert, als die Bewegtbild-Funktion dazukam: die
+        Tabelle kannte nur Bildformate, und `video/mp4` liess den Download
+        kommentarlos in einen Serverfehler laufen. Der Test haelt die Tabelle
+        und die tatsaechlich ausgelieferten Typen zusammen.
+        """
+        served = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "video/mp4": ".mp4",
+        }
+        for mime, extension in served.items():
+            with self.subTest(mime=mime):
+                name = server.safe_download_filename("Tyrannus Export", mime)
+                self.assertTrue(name.endswith(extension), name)
+                self.assertTrue(name.isascii(), name)
+
 
 if __name__ == "__main__":
     unittest.main()

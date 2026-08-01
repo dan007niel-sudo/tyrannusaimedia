@@ -1,8 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MotionFormat, MotionJob, MotionPreset, MotionResult, MotionSettings } from '../types';
-import { ChevronLeft, Download, Film, Loader2, Upload } from 'lucide-react';
-import { createMotionJob, extractAppError, waitForMotionJob } from '../services/geminiService';
+import { MotionFormat, MotionPreset, MotionSettings } from '../types';
+import { ChevronLeft, Download, Film, Loader2, Upload, X } from 'lucide-react';
 import ErrorDisplay, { AppError } from './ErrorDisplay';
+import {
+  MotionRenderError,
+  RenderedClip,
+  RenderProgress,
+  bannerCropLoss,
+  isMotionSupported,
+  loadImage,
+  renderMotion,
+} from '../services/motionRenderer';
 
 interface MotionWorkspaceProps {
   /** Flyer als Data-URI. Kommt entweder aus dem vorigen Schritt oder aus dem Upload hier. */
@@ -21,7 +29,9 @@ const PRESETS: { key: MotionPreset; label: string; hint: string }[] = [
 const FORMATS: { key: MotionFormat; label: string; hint: string }[] = [
   { key: 'feed', label: 'Feed 4:5', hint: 'Der Flyer wie er ist, kein Beschnitt.' },
   { key: 'story', label: 'Story 9:16', hint: 'Flyer vollständig, oben und unten unscharf aufgefüllt.' },
-  { key: 'banner', label: 'TV-Loop 16:9', hint: 'Beschnitt — es bleiben nur 45 % der Bildhöhe.' },
+  // Keine feste Prozentzahl: die gilt nur für 4:5-Quellen. Den echten Wert
+  // rechnet die Ausschnitts-Anzeige unten aus den Maßen des Flyers.
+  { key: 'banner', label: 'TV-Loop 16:9', hint: 'Beschnitt — ein Teil der Bildhöhe fällt weg.' },
 ];
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
@@ -36,15 +46,36 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
     bannerOffset: 0.5,
   });
 
-  const [job, setJob] = useState<MotionJob | null>(null);
+  const [clips, setClips] = useState<RenderedClip[]>([]);
   const [isRendering, setIsRendering] = useState(false);
+  const [progress, setProgress] = useState<RenderProgress | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [activeFormat, setActiveFormat] = useState<MotionFormat>('feed');
+  const [cropLoss, setCropLoss] = useState<number | null>(null);
 
-  // Beim Verlassen der Komponente muss das Pollen aufhoeren, sonst laeuft es
-  // im Hintergrund weiter und schreibt in einen abgeraeumten State.
-  const cancelledRef = useRef(false);
-  useEffect(() => () => { cancelledRef.current = true; }, []);
+  const supported = isMotionSupported();
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Beim Verlassen laufenden Render abbrechen und alle Objekt-URLs freigeben —
+  // sonst haelt der Browser die Videos im Speicher, bis der Tab zugeht.
+  const clipsRef = useRef<RenderedClip[]>([]);
+  clipsRef.current = clips;
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    clipsRef.current.forEach(c => URL.revokeObjectURL(c.url));
+  }, []);
+
+  // Den echten 16:9-Verlust aus den Maßen der Quelle rechnen, statt die 45 %
+  // als Text zu behaupten — bei einer anderen Quellhöhe stimmt die Zahl sonst
+  // nicht.
+  useEffect(() => {
+    if (!image) { setCropLoss(null); return; }
+    let alive = true;
+    loadImage(image)
+      .then(img => { if (alive) setCropLoss(bannerCropLoss(img.naturalWidth, img.naturalHeight)); })
+      .catch(() => { if (alive) setCropLoss(null); });
+    return () => { alive = false; };
+  }, [image]);
 
   const togglePreset = (key: MotionPreset) => {
     setSettings(prev => {
@@ -77,8 +108,9 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
     }
     const reader = new FileReader();
     reader.onload = () => {
+      clips.forEach(c => URL.revokeObjectURL(c.url));
+      setClips([]);
       setImage(typeof reader.result === 'string' ? reader.result : null);
-      setJob(null);
     };
     reader.readAsDataURL(file);
   };
@@ -86,37 +118,45 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
   const handleRender = async () => {
     if (!image) return;
     setError(null);
+    clips.forEach(c => URL.revokeObjectURL(c.url));
+    setClips([]);
+    setProgress(null);
     setIsRendering(true);
-    setJob(null);
-    cancelledRef.current = false;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
-      const created = await createMotionJob(image, settings, isDemoMode);
-      setJob(created);
-      const finished = await waitForMotionJob(
-        created.jobId,
-        update => { if (!cancelledRef.current) setJob(update); },
-        () => cancelledRef.current,
-      );
-      if (!cancelledRef.current) {
-        setJob(finished);
-        if (finished.results.length) setActiveFormat(finished.results[0].format);
-      }
+      const rendered = await renderMotion(image, settings, {
+        onProgress: setProgress,
+        signal: controller.signal,
+      });
+      setClips(rendered);
+      if (rendered.length) setActiveFormat(rendered[0].format);
     } catch (err: any) {
-      if (!cancelledRef.current) setError(extractAppError(err));
+      if (!controller.signal.aborted) {
+        setError({
+          message: err instanceof MotionRenderError
+            ? err.message
+            : 'Beim Erzeugen des Videos ist ein Fehler aufgetreten.',
+          errorType: 'UNKNOWN',
+          retryable: true,
+        });
+      }
     } finally {
-      if (!cancelledRef.current) setIsRendering(false);
+      abortRef.current = null;
+      setIsRendering(false);
+      setProgress(null);
     }
   };
 
-  const active: MotionResult | undefined = job?.results.find(r => r.format === activeFormat)
-    || job?.results[0];
+  const active: RenderedClip | undefined =
+    clips.find(c => c.format === activeFormat) || clips[0];
 
   const progressLabel = () => {
-    if (!job) return 'Job wird angelegt…';
-    if (job.status === 'queued') return 'In der Warteschlange…';
-    const { done, total, current } = job.progress;
-    return current ? `${current} — Format ${done + 1} von ${total}` : `${done} von ${total} fertig`;
+    if (!progress) return 'Wird vorbereitet…';
+    const pct = Math.round((progress.frame / progress.frameCount) * 100);
+    return `${progress.label} — ${progress.formatIndex + 1}/${progress.formatCount} · ${pct} %`;
   };
 
   return (
@@ -226,7 +266,9 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
             16:9 schneidet ab
           </p>
           <p className="mt-1 text-[11px] text-zinc-600">
-            Aus einem 4:5-Flyer bleiben nur 45 % der Bildhöhe. Wähle, welcher Teil bleibt.
+            {cropLoss !== null
+              ? `Von diesem Flyer bleiben nur ${Math.round((1 - cropLoss) * 100)} % der Bildhöhe. Wähle, welcher Teil bleibt.`
+              : 'Ein Teil der Bildhöhe fällt weg. Wähle, welcher Teil bleibt.'}
           </p>
           <div className="mt-3 flex items-center gap-3">
             <span className="text-[10px] uppercase tracking-widest text-zinc-500">Oben</span>
@@ -241,26 +283,56 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
             />
             <span className="text-[10px] uppercase tracking-widest text-zinc-500">Unten</span>
           </div>
-          {image && (
+          {image && cropLoss !== null && (
             <div className="relative mt-3 inline-block">
               <img src={image} alt="" className="w-32 opacity-40" />
               <div
                 className="absolute left-0 w-full border-y-2 border-[#1F3A2E] bg-[#1F3A2E]/10"
-                style={{ height: '45%', top: `${settings.bannerOffset * 55}%` }}
+                style={{
+                  height: `${(1 - cropLoss) * 100}%`,
+                  top: `${settings.bannerOffset * cropLoss * 100}%`,
+                }}
               />
             </div>
           )}
         </div>
       )}
 
-      <button
-        onClick={handleRender}
-        disabled={!image || isRendering || isDemoMode}
-        className="mb-8 flex w-full items-center justify-center gap-2 bg-[#1F3A2E] px-6 py-4 text-xs font-bold uppercase tracking-widest text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40 md:w-auto"
-      >
-        {isRendering ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
-        {isRendering ? progressLabel() : 'Bewegtbild erzeugen'}
-      </button>
+      {!supported && (
+        <div className="mb-8 border border-[#D6C3A3] bg-[#D6C3A3]/15 p-4 text-[11px] text-zinc-700">
+          Dieser Browser kann keine Videos erzeugen. Das Rendern läuft direkt auf
+          deinem Gerät und braucht Chrome, Edge oder Safari 17+.
+        </div>
+      )}
+
+      <div className="mb-8 flex flex-wrap items-center gap-3">
+        <button
+          onClick={handleRender}
+          disabled={!image || isRendering || isDemoMode || !supported}
+          className="flex w-full items-center justify-center gap-2 bg-[#1F3A2E] px-6 py-4 text-xs font-bold uppercase tracking-widest text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40 md:w-auto"
+        >
+          {isRendering ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
+          {isRendering ? progressLabel() : 'Bewegtbild erzeugen'}
+        </button>
+
+        {isRendering && (
+          <button
+            onClick={() => abortRef.current?.abort()}
+            className="flex items-center gap-1.5 border border-black/20 px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors hover:border-black"
+          >
+            <X size={12} /> Abbrechen
+          </button>
+        )}
+      </div>
+
+      {isRendering && progress && (
+        <div className="mb-8 h-1 w-full max-w-md bg-black/10" role="progressbar" aria-valuenow={Math.round((progress.frame / progress.frameCount) * 100)}>
+          <div
+            className="h-full bg-[#1F3A2E] transition-[width] duration-150"
+            style={{ width: `${(progress.frame / progress.frameCount) * 100}%` }}
+          />
+        </div>
+      )}
 
       {isDemoMode && (
         <p className="mb-8 text-[11px] text-zinc-500">
@@ -269,10 +341,10 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
       )}
 
       {/* Ergebnis */}
-      {job?.status === 'done' && job.results.length > 0 && (
+      {clips.length > 0 && (
         <div>
           <div className="mb-4 flex flex-wrap gap-2">
-            {job.results.map(r => (
+            {clips.map(r => (
               <button
                 key={r.format}
                 onClick={() => setActiveFormat(r.format)}
@@ -302,14 +374,22 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
                 controls
               />
               <div className="flex flex-wrap items-center gap-4">
+                {/* Das Video liegt als Blob im Browser. `download` mit
+                    explizitem Dateinamen ist auf iPhone/iPad Pflicht — ohne
+                    Endung landet die Datei ohne Typ im Downloads-Ordner und
+                    lässt sich nicht öffnen (dieselbe Falle wie bei den
+                    Bild-Downloads, PR #2/#3). */}
                 <a
-                  href={`${active.url}&download=1`}
+                  href={active.url}
+                  download={`tyrannus-${active.format}.mp4`}
                   className="flex items-center gap-2 border border-black px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-black hover:text-white"
                 >
                   <Download size={12} /> Herunterladen
                 </a>
                 <span className="text-[11px] text-zinc-500">
-                  {active.width}×{active.height} · {active.duration}s · in {active.seconds}s gerendert
+                  {active.width}×{active.height} · {active.duration}s ·
+                  {' '}{(active.blob.size / 1024 / 1024).toFixed(1)} MB ·
+                  {' '}in {active.seconds}s gerendert
                 </span>
               </div>
             </div>

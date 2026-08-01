@@ -195,9 +195,14 @@ class MotionEndpointGuards(unittest.TestCase):
 
     # ─── Verfuegbarkeit ──────────────────────────────────────────────────────
 
-    def test_health_reports_motion_availability(self):
+    def test_health_reports_server_motion_availability(self):
+        """
+        Das Flag beschreibt nur den serverseitigen Renderer. Die eigentliche
+        Bewegtbild-Funktion laeuft im Browser und haengt nicht daran — der
+        Name muss das sagen, sonst liest ihn jemand als „Feature ist tot".
+        """
         body = self.client.get("/api/health").json()
-        self.assertIn("motion_available", body)
+        self.assertIn("server_motion_available", body)
 
     def test_missing_ffmpeg_is_reported_as_unavailable_not_as_crash(self):
         with patch.object(server, "motion_available", return_value=False):

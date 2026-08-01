@@ -115,3 +115,18 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
   - Ursache: `safe_download_filename()` leitet die Endung aus einer festen MIME-Tabelle ab, die nur Bildformate kannte. `video/mp4` loeste einen KeyError aus.
   - Fix: `video/mp4` in die Tabelle aufgenommen.
   - Praevention/Test: `test_download_filename_covers_every_served_mime` haelt Tabelle und tatsaechlich ausgelieferte Typen zusammen. Bei neuen Ausgabeformaten immer beide Seiten pruefen.
+- 2026-08-01
+  - Symptom: Der serverseitige Bewegtbild-Renderer legte die gesamte Live-App lahm. Nach ~25 s Renderzeit kam 502, danach 404 auf den Job.
+  - Ursache: Render Free hat 0,1 CPU. ffmpeg hungert den einzigen Worker aus, die Plattform haelt den Dienst fuer tot und startet den Prozess neu — das 404 kam vom leeren In-Memory-Store nach dem Neustart. Kein Timeout, sondern ein Neustart. Betraf schon den kleinstmoeglichen Auftrag (480p, 3 s, ein Format).
+  - Fix: `MOTION_ENABLED=0` in Produktion; Rendern in den Browser verlagert (`services/motionRenderer.ts`, Canvas + WebCodecs + mp4-muxer).
+  - Praevention/Test: Bei rechenintensiven Funktionen auf kleinen Instanzen ist die Frage nicht „wie lange dauert es", sondern „ueberlebt der Prozess es". Zuerst den kleinstmoeglichen echten Auftrag gegen die Live-Instanz fahren und auf 502/404 achten. Ein Benchmark, der Sekunden misst, beantwortet die Frage gar nicht — `/api/motion/bench` war genau dieser Fehler.
+- 2026-08-01
+  - Symptom: Ein Render im Browser hing ohne Fehlermeldung; `flush()` kam nie zurueck.
+  - Ursache: `VideoEncoder.isConfigSupported()` meldete fuer `avc1.42001f` (Level 3.1) `supported: true`, `configure()` brach bei 1080x1350 dann mit `NotSupportedError` ab (codierte Flaeche ueber dem Level-Limit). Der Encoder war tot, nahm aber weiter Frames entgegen.
+  - Fix: `pickCodec()` konfiguriert jeden Kandidaten testweise wirklich, statt der Abfrage zu glauben; `configure()` im Renderpfad ist zusaetzlich in try/catch.
+  - Praevention/Test: Faehigkeitsabfragen sind Hinweise, keine Zusagen — die einzige verlaessliche Pruefung ist der echte Aufruf. Gilt fuer WebCodecs genauso wie fuer jede andere `isXSupported`-API.
+- 2026-08-01
+  - Symptom: Der Nahttest der Browser-Fassung waere am Kriterium „bit-genau null" gescheitert, obwohl das Ergebnis besser war als in ffmpeg.
+  - Ursache: Die exakte Null der ffmpeg-Fassung war ein Artefakt der Quantisierung — `zoompan` rundet die Bewegung am Zyklusanfang auf ganze Pixel und damit auf null, dort standen mehrere Frames faelschlich still. Canvas sampelt subpixelgenau und loest diese Bewegung auf.
+  - Fix: Kriterium ist das Verhaeltnis Naht zu Nachbarschritt (`SEAM_RATIO_LIMIT = 1.3`), nicht der Absolutwert. Gemessen: atem+licht 0,07 — die Naht ist glatter als ein normaler Frameuebergang.
+  - Praevention/Test: Beim Portieren zwischen Technologien nicht die Messwerte der alten Fassung als Zielwert uebernehmen. Erst pruefen, ob der alte Wert die Qualitaet beschreibt oder eine Eigenheit der alten Implementierung.

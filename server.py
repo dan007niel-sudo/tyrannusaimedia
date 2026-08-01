@@ -1008,7 +1008,11 @@ async def health():
         "api_configured": client is not None,
         "persistence_enabled": supabase_client is not None,
         "history_auth_configured": bool(HISTORY_ADMIN_TOKEN),
-        "motion_available": motion_available(),
+        # Bezieht sich ausschliesslich auf den SERVERSEITIGEN Renderer. Die
+        # Bewegtbild-Funktion selbst laeuft seit 01.08.2026 im Browser und ist
+        # von diesem Flag unabhaengig — die UI fragt dafuer WebCodecs ab, nicht
+        # diesen Endpunkt.
+        "server_motion_available": motion_available(),
     }
 
 

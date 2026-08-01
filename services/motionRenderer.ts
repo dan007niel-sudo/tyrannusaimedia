@@ -196,28 +196,47 @@ function buildCanvas(
   ctx.imageSmoothingQuality = 'high';
 
   if (fmt === 'story') {
-    // Kein Beschnitt: Flyer vollstaendig mittig, oben und unten eine stark
-    // unscharfe, abgedunkelte Kopie seiner selbst. Der Blur laeuft ueber eine
-    // Verkleinerung — `filter: blur()` mit grossem Radius auf voller Groesse
-    // ist um Groessenordnungen teurer und sieht gleich aus.
-    const small = document.createElement('canvas');
-    small.width = Math.max(2, Math.round(cw / 12));
-    small.height = Math.max(2, Math.round(ch / 12));
-    const sctx = small.getContext('2d')!;
-    const coverScale = Math.max(small.width / srcW, small.height / srcH);
-    const bw = srcW * coverScale;
-    const bh = srcH * coverScale;
-    sctx.drawImage(source, (small.width - bw) / 2, (small.height - bh) / 2, bw, bh);
+    // Kein Beschnitt: Flyer vollstaendig mittig, oben und unten aufgefuellt.
+    //
+    // Der Auffueller ist ein FARBVERLAUF aus den Randfarben des Flyers, keine
+    // unscharfe Kopie des Bildes. Zwei Versuche mit der Kopie sind gescheitert:
+    // erst stand das Logo als Geisterschrift im oberen Streifen, nach dem
+    // Heranzoomen dann die Ueberschrift im unteren. Ein Flyer hat Text an
+    // mehreren Stellen — jede Zoomstufe zieht irgendeinen davon in einen
+    // Streifen. Weichzeichnen rettet das nicht: `ctx.filter = 'blur()'` wirkt
+    // im ZIELmassstab, 9 px zerstoeren keine 132-pt-Ueberschrift.
+    //
+    // Der Verlauf kann diesen Fehler nicht machen und passt zum Brand-Prinzip
+    // „Reduktion auf das Wesentliche" besser als ein matschiges Duplikat.
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 16;
+    const pctx = probe.getContext('2d', { willReadFrequently: true })!;
+    pctx.drawImage(source, 0, 0, 1, 16);
+    const px = pctx.getImageData(0, 0, 1, 16).data;
+    const rgb = (i: number, k = 1) =>
+      `rgb(${Math.round(px[i * 4] * k)},${Math.round(px[i * 4 + 1] * k)},${Math.round(px[i * 4 + 2] * k)})`;
 
-    ctx.filter = 'blur(4px) brightness(0.72) saturate(0.55)';
-    ctx.drawImage(small, 0, 0, cw, ch);
-    ctx.filter = 'none';
-
-    // Flyer vollstaendig hineinpassen (contain).
     const fitScale = Math.min(cw / srcW, ch / srcH);
     const fw = srcW * fitScale;
     const fh = srcH * fitScale;
-    ctx.drawImage(source, (cw - fw) / 2, (ch - fh) / 2, fw, fh);
+    const top = (ch - fh) / 2;
+
+    // Oberer Streifen: von abgedunkelt am Bildrand zur Randfarbe des Flyers.
+    const gTop = ctx.createLinearGradient(0, 0, 0, top + 2);
+    gTop.addColorStop(0, rgb(0, 0.45));
+    gTop.addColorStop(1, rgb(0, 0.95));
+    ctx.fillStyle = gTop;
+    ctx.fillRect(0, 0, cw, Math.ceil(top) + 2);
+
+    // Unterer Streifen: spiegelbildlich.
+    const gBot = ctx.createLinearGradient(0, top + fh - 2, 0, ch);
+    gBot.addColorStop(0, rgb(15, 0.95));
+    gBot.addColorStop(1, rgb(15, 0.45));
+    ctx.fillStyle = gBot;
+    ctx.fillRect(0, Math.floor(top + fh) - 2, cw, ch - Math.floor(top + fh) + 2);
+
+    ctx.drawImage(source, (cw - fw) / 2, top, fw, fh);
   } else if (fmt === 'banner') {
     // Volle Breite behalten, Hoehe beschneiden; bannerOffset 0..1 schiebt den
     // Ausschnitt vertikal.

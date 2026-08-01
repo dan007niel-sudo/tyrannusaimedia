@@ -19,9 +19,15 @@ services:
         sync: false  # Server-side Supabase key; never expose in frontend
       - key: PYTHON_VERSION
         value: 3.11.11
-      # Bewegtbild (Stufe „Ambient"). Beide optional — ohne sie gelten die
-      # Defaults aus motion_render.py (720p) bzw. build.sh (keine Prüfsumme).
+      # Bewegtbild (Stufe „Ambient") — auf dem Free-Plan AUS.
+      #
+      # Gemessen am 01.08.2026: schon der kleinstmögliche Auftrag (480p, 3 s,
+      # ein Format) lässt die Instanz nach ~25 s mit 502 aussteigen und neu
+      # starten. Auf 0,1 CPU hungert ffmpeg den einzigen Worker aus. Erst
+      # wieder auf 1 setzen, wenn das Rendern woanders läuft.
+      - key: MOTION_ENABLED
+        value: "0"
       - key: MOTION_SHORT_EDGE
-        sync: false  # erst nach der Messung auf der Instanz auf 1080 heben
+        sync: false  # nur relevant, wenn MOTION_ENABLED wieder 1 ist
       - key: FFMPEG_SHA256
         sync: false  # prüft den heruntergeladenen ffmpeg-Tarball, wenn gesetzt

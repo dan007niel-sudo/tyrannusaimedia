@@ -1052,7 +1052,23 @@ _motion_jobs: dict[str, dict] = {}
 _motion_semaphore = asyncio.Semaphore(1)
 
 
+# Notbremse. Auf Render Free (0,1 CPU) ueberlebt die Instanz das Rendern nicht:
+# gemessen am 01.08.2026 mit dem kleinstmoeglichen Auftrag (480p, 3 s, ein
+# Preset, ein Format) — nach ~25 s Laufzeit antwortete die Instanz mit 502, kam
+# danach neu hoch und meldete den Job mit 404, weil der In-Memory-Store leer
+# war. Es ist also kein „langsam", sondern ein Prozess-Neustart: ffmpeg hungert
+# den einzigen Worker aus, die Plattform haelt den Dienst fuer tot und startet
+# ihn neu. Wer im Team auf „Bewegtbild erzeugen" klickt, legt damit die ganze
+# App fuer rund eine Minute lahm.
+#
+# Deshalb in Produktion aus (render.yaml setzt MOTION_ENABLED=0), lokal an.
+# Wieder einschalten, sobald das Rendern nicht mehr auf dieser Instanz laeuft.
+MOTION_ENABLED = os.environ.get("MOTION_ENABLED", "1") != "0"
+
+
 def motion_available() -> bool:
+    if not MOTION_ENABLED:
+        return False
     try:
         motion_render.ffmpeg_bin()
         motion_render.ffprobe_bin()
@@ -1212,8 +1228,8 @@ async def api_motion_create_job(request: Request):
     if not motion_available():
         raise structured_error(
             503,
-            "Die Bewegtbild-Funktion ist auf diesem Server nicht verfügbar "
-            "(ffmpeg fehlt).",
+            "Die Bewegtbild-Funktion ist auf diesem Server gerade nicht "
+            "verfügbar. Das Rendern läuft noch nicht auf dieser Instanz.",
             "MOTION_UNAVAILABLE",
             False,
         )

@@ -177,7 +177,7 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, isGenerating: true, error: null }));
 
     const requests: { key: string; ratio: AspectRatio }[] = [];
-    if (data.selectedFormats.feed) requests.push({ key: 'feed', ratio: '3:4' });
+    if (data.selectedFormats.feed) requests.push({ key: 'feed', ratio: '4:5' });
     if (data.selectedFormats.story) requests.push({ key: 'story', ratio: '9:16' });
     if (data.selectedFormats.banner) requests.push({ key: 'banner', ratio: '16:9' });
     if (data.selectedFormats.custom) requests.push({ key: 'custom', ratio: data.customRatio });

@@ -139,7 +139,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
 
   const getLabel = (key: string) => {
       switch(key) {
-          case 'feed': return { text: 'Feed (3:4)', icon: <Layout size={14} /> };
+          case 'feed': return { text: 'Feed (4:5)', icon: <Layout size={14} /> };
           case 'story': return { text: 'Story (9:16)', icon: <Smartphone size={14} /> };
           case 'banner': return { text: 'Banner (16:9)', icon: <Monitor size={14} /> };
           default: return { text: `Custom (${data.customRatio})`, icon: <Square size={14} /> };

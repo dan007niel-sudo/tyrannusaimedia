@@ -39,6 +39,17 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
 
 ## Lessons Learned
 
+- 2026-09-10
+  - Symptom: Kein Ausfall — beim Deep Dive gefunden, bevor er eintrat. `gemini-2.5-flash-image` (Bildgenerierung UND -bearbeitung) hatte Abschaltung am 02.10.2026, `gemini-3-flash-preview` (Brainstorm) war bereits deprecated. Drei Wochen Vorlauf, niemand haette es gemerkt, bis die App stillsteht.
+  - Ursache: Modell-IDs standen als Literale in drei Funktionsruempfen (`server.py` Brainstorm/Generierung/Bearbeitung). Es gab keine Stelle, an der ablesbar war, welche Modelle die App ueberhaupt benutzt — und keinen Anlass, Googles Deprecations-Seite je wieder zu lesen. Verschaerfend: fuer den Brainstorm war urspruenglich eine **Preview**-ID gewaehlt worden. Preview-Fassungen werden ohne Vorlauf abgekuendigt; das ist kein Unfall, sondern ihre Zusage.
+  - Fix: IDs zentral in `server.py` (Abschnitt „Modelle"), ueber `TEXT_MODEL`/`IMAGE_MODEL` per ENV ueberschreibbar — ein Modellwechsel ist damit ohne Deploy pruefbar und ohne Rollback zurueckdrehbar. Migriert auf die stabilen `gemini-3.6-flash` und `gemini-3.1-flash-image`.
+  - Praevention/Test: Modellwahl immer gegen Googles Deprecations-Seite pruefen, nie aus dem Gedaechtnis — Modellnamen sind der Bereich, in dem Trainingswissen am schnellsten veraltet. Nur stabile IDs. Nach jedem Wechsel alle drei Pfade einmal ECHT aufrufen: `/api/health` meldet `api_configured: true`, sobald ein Schluessel gesetzt ist, und sagt ueber die Existenz des Modells nichts aus.
+
+- 2026-09-10
+  - Symptom: „Feed" bedeutet an zwei Stellen der App zwei verschiedene Seitenverhaeltnisse. Das Bildstudio erzeugt 3:4 (`App.tsx:180`, Label „Feed (3:4)" in `ImageWorkspace.tsx:142`), der Bewegtbild-Renderer rechnet mit 4:5 (`motionRenderer.ts` `FORMAT_ASPECT`, Label „Feed 4:5").
+  - Ursache: **keine Schlamperei, sondern eine ueberholte Modellgrenze.** Der Eintrag vom 12.05.2026 zeigt: die UI wollte damals schon `Feed (4:5)`, und der Fix war, die Labels auf `3:4` HERUNTERzusetzen — weil das damalige Bildmodell 4:5 nicht konnte. Der Bewegtbild-Renderer entstand spaeter (August) und behielt die urspruengliche Absicht 4:5 bei. Folge bis heute: wer ein Feed-Bild generiert und es danach animiert, bekommt einen stillen Cover-Beschnitt. Der Kommentar im Renderer („bei einer 4:5-Quelle veraendert das nichts") beschreibt eine Quelle, die die App nie erzeugt hat.
+  - Fix: `gemini-3.1-flash-image` unterstuetzt 4:5 nativ. Damit ist die Grenze weg und die urspruengliche Absicht wiederhergestellt: Feed = 4:5 in Ratio-Typ, Anforderung, beiden Labels, Demo-Vorschau, Backend-Allowlist und README. **3:4 bleibt in der Allowlist** — bereits gespeicherte Bildreferenzen tragen es, ein Entfernen wuerde die Historie brechen. Neuer Positivtest `test_accepts_feed_four_five`.
+  - Praevention/Test: Wenn eine Modellgrenze zu einer Produktentscheidung fuehrt, gehoert der GRUND in die Notiz — sonst sieht die naechste Sitzung nur eine Ungereimtheit und weiss nicht, ob sie ein Fehler oder Absicht war. Und: Formatnamen gehoeren an EINE Stelle, aus der Bild- und Videopfad gemeinsam lesen. Solange beide eigene Tabellen fuehren (`App.tsx` vs. `FORMAT_ASPECT`), faellt eine Abweichung erst dem Nutzer auf.
 - Lessons Learned werden projektlokal in dieser Datei gepflegt.
 - Bei jedem gefundenen oder behobenen Bug wird ein kurzer Eintrag ergaenzt:
   - Datum

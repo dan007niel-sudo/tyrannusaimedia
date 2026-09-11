@@ -112,7 +112,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
 
                 {/* Format Toggles */}
                 <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.feed ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
-                    <span className="text-xs font-bold uppercase tracking-widest">Feed (3:4)</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Feed (4:5)</span>
                     <input
                         type="checkbox"
                         checked={data.selectedFormats.feed}
@@ -159,6 +159,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
                     >
                         <option value="1:1">1:1 (Quadrat)</option>
                         <option value="4:3">4:3 (Standard)</option>
+                        <option value="4:5">4:5 (Feed)</option>
                         <option value="3:4">3:4 (Portrait)</option>
                         <option value="16:9">16:9 (Landscape)</option>
                         <option value="9:16">9:16 (Vertical)</option>

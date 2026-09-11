@@ -185,6 +185,24 @@ IMAGE_BUCKET = "generated-images"
 # ihm (MOTION_JOB_TTL).
 MOTION_BUCKET = os.environ.get("MOTION_BUCKET", "generated-motion")
 
+# ─── Modelle ──────────────────────────────────────────────────────────────────
+#
+# Zentral statt im Funktionsrumpf: bei der naechsten Abkuendigung soll an EINER
+# Stelle stehen, was betroffen ist. Ueber ENV ueberschreibbar, damit ein
+# Modellwechsel ohne neuen Deploy pruefbar ist — und zurueckdrehbar, falls das
+# neue Modell sich anders verhaelt.
+#
+# NUR STABILE IDs. Der Griff zur Preview-Fassung ist genau der Grund, warum das
+# Brainstorm-Modell im September 2026 unter Zugzwang stand.
+#
+# Stand 10.09.2026, Googles Deprecations-Seite:
+#   gemini-3-flash-preview  deprecated, kein Abschaltdatum  -> gemini-3.6-flash
+#   gemini-2.5-flash-image  Abschaltung 02.10.2026          -> gemini-3.1-flash-image
+
+TEXT_MODEL = os.environ.get("TEXT_MODEL", "gemini-3.6-flash")
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gemini-3.1-flash-image")
+
+
 # ─── Constants (from original constants.ts) ───────────────────────────────────
 
 PHOTOREALISM_SUFFIX = """
@@ -504,7 +522,7 @@ async def api_brainstorm(req: BrainstormRequest):
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=TEXT_MODEL,
             contents=types.Content(parts=parts),
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION_BRAINSTORM,
@@ -595,7 +613,7 @@ async def _generate_single_image(
     try:
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model="gemini-2.5-flash-image",
+                model=IMAGE_MODEL,
                 contents=types.Content(parts=parts),
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
@@ -751,7 +769,7 @@ async def api_edit_image(req: EditImageRequest):
     try:
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model="gemini-2.5-flash-image",
+                model=IMAGE_MODEL,
                 contents=types.Content(parts=parts),
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
@@ -809,7 +827,7 @@ def validate_save_image_reference_request(req: SaveImagesRequest) -> None:
         if not public_url:
             continue
         validate_storage_public_url(public_url)
-        if req.aspectRatios.get(fmt_key, "1:1") not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
+        if req.aspectRatios.get(fmt_key, "1:1") not in {"1:1", "3:4", "4:3", "4:5", "9:16", "16:9"}:
             raise ValueError("Unsupported aspect ratio.")
 
 

@@ -29,6 +29,25 @@ Namen (Werte siehe `.env.example`):
 - `HISTORY_ADMIN_TOKEN`
 - `SUPABASE_URL`
 - `SUPABASE_KEY`
+- `TEXT_MODEL` / `IMAGE_MODEL` — optional, ueberschreiben die Modellvorgaben aus
+  `server.py`. Da, um einen Modellwechsel ohne Deploy pruefen und ohne Rollback
+  zurueckdrehen zu koennen.
+
+## Modelle
+
+Die IDs stehen zentral in `server.py` (Abschnitt „Modelle"), nicht im
+Funktionsrumpf — bei der naechsten Abkuendigung soll an einer Stelle stehen, was
+betroffen ist.
+
+**Nur stabile IDs, nie Preview.** Am 10.09.2026 stand die App genau deswegen
+unter Zugzwang: `gemini-2.5-flash-image` (Bildgenerierung **und** -bearbeitung)
+hatte Abschaltung am **02.10.2026**, `gemini-3-flash-preview` (Brainstorm) war
+bereits deprecated. Migriert auf `gemini-3.1-flash-image` und `gemini-3.6-flash`.
+
+Vor jedem Modellwechsel Googles Deprecations-Seite lesen, nicht das Gedaechtnis
+fragen — und danach jeden der drei Pfade (Brainstorm, Generierung, Bearbeitung)
+einmal echt aufrufen. Ein `/api/health` mit `api_configured: true` beweist nur,
+dass ein Schluessel gesetzt ist, nicht dass das Modell existiert.
 
 ## Deploy-Workflow
 

@@ -9,6 +9,8 @@ import ProjectHistory from './components/ProjectHistory';
 import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
 import { Clock, Eye, Film } from 'lucide-react';
 import { createDemoAppData, createDemoImages, DEMO_METAPHORS, isDemoMode } from './utils/demoMode';
+import AccessGate from './components/AccessGate';
+import { readTeamToken, writeTeamToken } from './services/teamAccess';
 
 // ─── Schule von Tyrannus Logo ────────────────────────────────────────────────
 
@@ -56,6 +58,7 @@ const App: React.FC = () => {
 
   // Structured error state
   const [appError, setAppError] = useState<AppError | null>(null);
+  const [unlocked, setUnlocked] = useState(() => demoMode || Boolean(readTeamToken()));
 
   // Track last action for retry
   const lastActionRef = useRef<'brainstorm' | 'generate' | null>(null);
@@ -82,6 +85,17 @@ const App: React.FC = () => {
   const handleError = (error: any) => {
     console.error('App error:', error);
     const structured = extractAppError(error);
+
+    // Nur ACCESS_DENIED sperrt zurueck aufs Tor — NICHT PERMISSION_DENIED:
+    // den sendet der Server auch bei ungueltigem Gemini-Key, und dann waere
+    // das Zugangswort die falsche Faehrte.
+    if (structured.errorType === 'ACCESS_DENIED') {
+      writeTeamToken('');
+      setUnlocked(false);
+      setState(prev => ({ ...prev, isGenerating: false, error: null }));
+      return;
+    }
+
     setAppError(structured);
     setState(prev => ({ ...prev, isGenerating: false, error: null }));
   };
@@ -177,7 +191,7 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, isGenerating: true, error: null }));
 
     const requests: { key: string; ratio: AspectRatio }[] = [];
-    if (data.selectedFormats.feed) requests.push({ key: 'feed', ratio: '3:4' });
+    if (data.selectedFormats.feed) requests.push({ key: 'feed', ratio: '4:5' });
     if (data.selectedFormats.story) requests.push({ key: 'story', ratio: '9:16' });
     if (data.selectedFormats.banner) requests.push({ key: 'banner', ratio: '16:9' });
     if (data.selectedFormats.custom) requests.push({ key: 'custom', ratio: data.customRatio });
@@ -294,6 +308,10 @@ const App: React.FC = () => {
   };
 
   // ─── App Shell ───────────────────────────────────────────────────────────
+
+  if (!unlocked) {
+    return <AccessGate onUnlocked={() => setUnlocked(true)} />;
+  }
 
   return (
     <div className="brand-surface min-h-screen text-black selection:bg-black selection:text-white flex flex-col">

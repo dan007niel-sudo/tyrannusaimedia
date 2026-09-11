@@ -11,6 +11,7 @@
 
 import { Metaphor, ImageSize, GeneratedImages, AspectRatio, MotionJob, MotionSettings } from "../types";
 import { AppError } from "../components/ErrorDisplay";
+import { teamAuthHeaders } from "./teamAccess";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ export const generateMetaphors = async (
 ): Promise<{ metaphors: Metaphor[]; projectId: string | null }> => {
   const response = await fetchWithTimeout("/api/brainstorm", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...teamAuthHeaders() },
     body: JSON.stringify({
       verse,
       theme,
@@ -189,7 +190,7 @@ export const generateMultiFormatImages = async (
 ): Promise<{ images: GeneratedImages; storedUrls: Record<string, string>; errors: Record<string, AppError> }> => {
   const response = await fetchWithTimeout("/api/generate-images", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...teamAuthHeaders() },
     body: JSON.stringify({
       metaphorPrompt,
       imageSize: size,
@@ -213,7 +214,7 @@ export const editImage = async (
 ): Promise<string> => {
   const response = await fetchWithTimeout("/api/edit-image", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...teamAuthHeaders() },
     body: JSON.stringify({
       imageBase64: currentImageBase64,
       editInstruction,
@@ -390,4 +391,23 @@ export const waitForMotionJob = async (
       );
     }
   }
+};
+
+// ─── Zugang ──────────────────────────────────────────────────────────────────
+
+/**
+ * Prueft ein Zugangswort, ohne einen kostenpflichtigen Auftrag auszuloesen.
+ *
+ * Gibt `true` bei 200, `false` bei 401. Alles andere (503 bei nicht
+ * konfiguriertem Server, Netzfehler) wirft — das ist kein falsches Wort und
+ * darf dem Nutzer nicht als solches angezeigt werden.
+ */
+export const checkTeamAccess = async (token: string): Promise<boolean> => {
+  const response = await fetchWithTimeout("/api/access/check", {
+    headers: token.trim() ? { "X-Team-Token": token.trim() } : {},
+  }, 15_000);
+
+  if (response.status === 401) return false;
+  await handleResponse(response);
+  return true;
 };

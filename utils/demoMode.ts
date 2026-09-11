@@ -60,7 +60,7 @@ function demoSvg(title: string, subtitle: string, width: number, height: number)
 
 export function createDemoImages(): GeneratedImages {
   return {
-    feed: demoSvg("Feed-Konzept", "3:4 Vorschau ohne KI-Generierung", 900, 1200),
+    feed: demoSvg("Feed-Konzept", "4:5 Vorschau ohne KI-Generierung", 960, 1200),
     story: demoSvg("Story-Konzept", "9:16 Vorschau ohne KI-Generierung", 900, 1600),
     banner: demoSvg("Banner-Konzept", "16:9 Vorschau ohne KI-Generierung", 1600, 900),
   };

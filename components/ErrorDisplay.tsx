@@ -3,7 +3,7 @@ import { AlertTriangle, RefreshCw, ShieldAlert, Clock, Ban, WifiOff, HelpCircle,
 
 export interface AppError {
   message: string;
-  errorType: 'PERMISSION_DENIED' | 'RATE_LIMITED' | 'TIMEOUT' | 'CONTENT_BLOCKED' | 'MODEL_UNAVAILABLE' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'UPLOAD_INVALID' | 'UPLOAD_TOO_LARGE' | 'UNKNOWN';
+  errorType: 'ACCESS_DENIED' | 'PERMISSION_DENIED' | 'RATE_LIMITED' | 'TIMEOUT' | 'CONTENT_BLOCKED' | 'MODEL_UNAVAILABLE' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'UPLOAD_INVALID' | 'UPLOAD_TOO_LARGE' | 'UNKNOWN';
   retryable: boolean;
 }
 
@@ -21,6 +21,13 @@ const ERROR_CONFIG: Record<string, {
   borderColor: string;
   title: string;
 }> = {
+  ACCESS_DENIED: {
+    icon: <ShieldAlert size={18} />,
+    color: 'text-red-700',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-200',
+    title: 'Zugangswort ungültig',
+  },
   PERMISSION_DENIED: {
     icon: <ShieldAlert size={18} />,
     color: 'text-red-700',

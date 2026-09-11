@@ -40,7 +40,7 @@ cp .env.example .env
 npm run dev
 
 # 5. Backend starten (Port 8000, separates Terminal)
-uvicorn server:app --reload --port 8000
+uvicorn server:app --reload --port 8000 --env-file .env
 ```
 
 Öffne `http://localhost:3000` — Vite proxied `/api/*` automatisch zum Backend.
@@ -60,7 +60,7 @@ Live unter: `https://tyrannusaimedia.onrender.com`
 ## Funktionen
 
 - 🎨 **Visuelle Konzeption**: Bibelverse in cineastische Bildmetaphern verwandeln
-- 📐 **Multi-Format**: Feed (3:4), Story (9:16), Banner (16:9), Custom
+- 📐 **Multi-Format**: Feed (4:5), Story (9:16), Banner (16:9), Custom
 - 🖼️ **Auflösung**: 1K, 2K, 4K
 - ✏️ **Bild-Bearbeitung**: Generierte Bilder direkt nachbearbeiten
 - 📱 **Responsive**: Desktop & Mobile

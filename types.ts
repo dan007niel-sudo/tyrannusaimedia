@@ -8,7 +8,7 @@ export interface Metaphor {
 export type ImageSize = '1K' | '2K' | '4K';
 
 // Supported API Aspect Ratios
-export type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
+export type AspectRatio = '1:1' | '3:4' | '4:3' | '4:5' | '9:16' | '16:9';
 
 export interface GeneratedImages {
   [key: string]: string | null;
@@ -82,7 +82,7 @@ export interface AppData {
   imageSize: ImageSize;
   // Configuration for generation
   selectedFormats: {
-    feed: boolean;   // 3:4
+    feed: boolean;   // 4:5
     story: boolean;  // 9:16
     banner: boolean; // 16:9
     custom: boolean; // Custom toggle

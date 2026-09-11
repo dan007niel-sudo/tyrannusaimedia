@@ -93,6 +93,20 @@ class SaveImageReferenceGuardTests(unittest.TestCase):
                 aspectRatios={"feed": "2:3"},
             ))
 
+    def test_accepts_feed_four_five(self):
+        """4:5 ist seit dem 10.09.2026 das Feed-Format (Modell-Migration).
+
+        Die Allowlist ist die einzige Stelle, an der ein Format lautlos
+        verschwinden kann: faellt 4:5 heraus, generiert die App weiter, aber
+        das Speichern der Bildreferenz scheitert — und zwar erst beim Nutzer.
+        Alle anderen Tests hier pruefen Ablehnung; dieser prueft Annahme.
+        """
+        server.validate_save_image_reference_request(server.SaveImagesRequest(
+            projectId="12345678-1234-5678-1234-567812345678",
+            images={"feed": "https://example.supabase.co/storage/v1/object/public/generated-images/a.png"},
+            aspectRatios={"feed": "4:5"},
+        ))
+
 
 class HistoryAuthTests(unittest.TestCase):
     def setUp(self):

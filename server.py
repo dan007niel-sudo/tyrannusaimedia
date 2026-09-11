@@ -154,12 +154,20 @@ def check_safety_block(response) -> None:
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 HISTORY_ADMIN_TOKEN = os.environ.get("HISTORY_ADMIN_TOKEN", "")
+# Gemeinsames Zugangswort fuer das Social-Media-Team. Schuetzt die drei Routen,
+# die Geld kosten. Kein Konto-System: neun Leute, ein Wort, keine
+# personenbezogenen Daten — und damit auch keine DSGVO-Pflichten, die ein
+# Nutzerkonto ausloesen wuerde.
+TEAM_ACCESS_TOKEN = os.environ.get("TEAM_ACCESS_TOKEN", "")
 
 if not GEMINI_API_KEY:
     print("⚠️  WARNING: GEMINI_API_KEY not set. API endpoints will fail.")
 
 if not HISTORY_ADMIN_TOKEN:
     print("⚠️  WARNING: HISTORY_ADMIN_TOKEN not set. Project history endpoints are locked.")
+
+if not TEAM_ACCESS_TOKEN:
+    print("⚠️  WARNING: TEAM_ACCESS_TOKEN not set. Generation endpoints are locked.")
 
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -184,6 +192,24 @@ IMAGE_BUCKET = "generated-images"
 # die Funktion trotzdem — die Clips haengen dann nur am Job und verfallen mit
 # ihm (MOTION_JOB_TTL).
 MOTION_BUCKET = os.environ.get("MOTION_BUCKET", "generated-motion")
+
+# ─── Modelle ──────────────────────────────────────────────────────────────────
+#
+# Zentral statt im Funktionsrumpf: bei der naechsten Abkuendigung soll an EINER
+# Stelle stehen, was betroffen ist. Ueber ENV ueberschreibbar, damit ein
+# Modellwechsel ohne neuen Deploy pruefbar ist — und zurueckdrehbar, falls das
+# neue Modell sich anders verhaelt.
+#
+# NUR STABILE IDs. Der Griff zur Preview-Fassung ist genau der Grund, warum das
+# Brainstorm-Modell im September 2026 unter Zugzwang stand.
+#
+# Stand 10.09.2026, Googles Deprecations-Seite:
+#   gemini-3-flash-preview  deprecated, kein Abschaltdatum  -> gemini-3.6-flash
+#   gemini-2.5-flash-image  Abschaltung 02.10.2026          -> gemini-3.1-flash-image
+
+TEXT_MODEL = os.environ.get("TEXT_MODEL", "gemini-3.6-flash")
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gemini-3.1-flash-image")
+
 
 # ─── Constants (from original constants.ts) ───────────────────────────────────
 
@@ -429,6 +455,46 @@ def ensure_history_admin(x_history_token: str | None = Header(default=None, alia
         )
 
 
+def ensure_team_access(x_team_token: str | None = Header(default=None, alias="X-Team-Token")) -> None:
+    """Schuetzt die kostenpflichtigen Routen (Brainstorm, Bildgenerierung, Bearbeitung).
+
+    Bewusst FAIL CLOSED: ohne gesetztes TEAM_ACCESS_TOKEN antwortet die Route mit
+    503 statt offen zu stehen. Ein Zugangsschutz, der sich bei fehlender
+    Konfiguration selbst abschaltet, schuetzt genau dann nicht, wenn es darauf
+    ankommt — naemlich beim frisch aufgesetzten Dienst.
+
+    Folge fuers Ausliefern: TEAM_ACCESS_TOKEN muss in Render gesetzt sein, BEVOR
+    diese Fassung live geht, sonst steht die App.
+
+    `secrets.compare_digest` statt `==`: gleiche Laufzeit unabhaengig davon, ab
+    welchem Zeichen zwei Werte auseinanderlaufen.
+    """
+    if not TEAM_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail=json.dumps({
+                "message": "Der Zugang ist noch nicht eingerichtet. Bitte TEAM_ACCESS_TOKEN auf dem Server setzen.",
+                "errorType": "SERVER_ERROR",
+                "retryable": False,
+            })
+        )
+
+    if not x_team_token or not secrets.compare_digest(x_team_token, TEAM_ACCESS_TOKEN):
+        raise HTTPException(
+            status_code=401,
+            detail=json.dumps({
+                # EIGENER Typ, nicht PERMISSION_DENIED: den sendet
+                # `classify_gemini_error` auch bei ungueltigem Gemini-Key. Wuerde
+                # die Oberflaeche daran das Zugangstor ausloesen, sperrte ein
+                # Server-Problem das ganze Team aus und schickte es auf die
+                # Suche nach einem Wort, das gar nicht falsch ist.
+                "message": "Zugangswort fehlt oder stimmt nicht.",
+                "errorType": "ACCESS_DENIED",
+                "retryable": False,
+            })
+        )
+
+
 def build_reference_part(data_uri: str) -> types.Part:
     """Build a Gemini Part from a data URI image."""
     mime_type, raw_bytes = validate_uploaded_image(data_uri, MAX_REFERENCE_IMAGE_BYTES)
@@ -445,7 +511,7 @@ app = FastAPI(title="Tyrannus AI Media API")
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 @app.post("/api/brainstorm")
-async def api_brainstorm(req: BrainstormRequest):
+async def api_brainstorm(req: BrainstormRequest, _: None = Depends(ensure_team_access)):
     """Generate 3 visual metaphor concepts for a bible verse + theme."""
     ensure_client()
 
@@ -504,7 +570,7 @@ async def api_brainstorm(req: BrainstormRequest):
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=TEXT_MODEL,
             contents=types.Content(parts=parts),
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION_BRAINSTORM,
@@ -595,7 +661,7 @@ async def _generate_single_image(
     try:
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model="gemini-2.5-flash-image",
+                model=IMAGE_MODEL,
                 contents=types.Content(parts=parts),
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
@@ -626,7 +692,7 @@ async def _generate_single_image(
 
 
 @app.post("/api/generate-images")
-async def api_generate_images(req: GenerateImagesRequest):
+async def api_generate_images(req: GenerateImagesRequest, _: None = Depends(ensure_team_access)):
     """Generate images in multiple formats (feed, story, banner, custom)."""
     ensure_client()
 
@@ -733,7 +799,7 @@ async def api_generate_images(req: GenerateImagesRequest):
 
 
 @app.post("/api/edit-image")
-async def api_edit_image(req: EditImageRequest):
+async def api_edit_image(req: EditImageRequest, _: None = Depends(ensure_team_access)):
     """Edit an existing image using AI."""
     ensure_client()
 
@@ -751,7 +817,7 @@ async def api_edit_image(req: EditImageRequest):
     try:
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model="gemini-2.5-flash-image",
+                model=IMAGE_MODEL,
                 contents=types.Content(parts=parts),
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
@@ -809,7 +875,7 @@ def validate_save_image_reference_request(req: SaveImagesRequest) -> None:
         if not public_url:
             continue
         validate_storage_public_url(public_url)
-        if req.aspectRatios.get(fmt_key, "1:1") not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
+        if req.aspectRatios.get(fmt_key, "1:1") not in {"1:1", "3:4", "4:3", "4:5", "9:16", "16:9"}:
             raise ValueError("Unsupported aspect ratio.")
 
 
@@ -997,6 +1063,17 @@ async def api_delete_project(project_id: str, _: None = Depends(ensure_history_a
     except Exception as e:
         print(f"⚠️  Delete project failed: {e}")
         raise HTTPException(status_code=500, detail="Löschen fehlgeschlagen.")
+
+
+@app.get("/api/access/check")
+async def api_access_check(_: None = Depends(ensure_team_access)):
+    """Prueft das Zugangswort, ohne Kosten zu verursachen.
+
+    Ohne diesen Endpunkt muesste die Oberflaeche das Wort am ersten echten
+    Auftrag testen — und ein Tippfehler haette den Nutzer erst nach dem Warten
+    auf eine Bildgenerierung erreicht.
+    """
+    return {"ok": True}
 
 
 @app.get("/api/health")

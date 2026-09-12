@@ -35,7 +35,7 @@ interface StepTrackProps {
 export const StepTrack: React.FC<StepTrackProps> = ({ current, tone = 'light' }) => {
   const currentIndex = STEPS.findIndex(s => s.key === current);
   const ink = tone === 'deep' ? 'text-svt-cream' : 'text-black';
-  const muted = tone === 'deep' ? 'text-svt-cream/45' : 'text-black/35';
+  const muted = tone === 'deep' ? 'text-svt-cream/45' : 'text-black/55';
 
   return (
     <ol className="flex items-center gap-4 md:gap-7" aria-label="Arbeitsschritte">

@@ -311,7 +311,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
               disabled={isDemoMode}
               rows={4}
               placeholder={isDemoMode ? 'Bearbeitung ist im Vorschau-Modus deaktiviert.' : 'z. B. mehr Licht, ruhigerer Hintergrund, stärkerer Fokus'}
-              className="w-full resize-none rounded-none border border-svt-green/20 bg-white/70 p-4 text-base font-light leading-relaxed text-black outline-none transition-colors duration-200 placeholder:text-black/30 focus:border-svt-green disabled:cursor-not-allowed disabled:bg-svt-cream/60 md:text-[15px]"
+              className="w-full resize-none rounded-none border border-svt-green/20 bg-white/70 p-4 text-base font-light leading-relaxed text-black outline-none transition-colors duration-200 placeholder:text-black/55 focus:border-svt-green disabled:cursor-not-allowed disabled:bg-svt-cream/60 md:text-[15px]"
             />
 
             {editError && (
@@ -341,7 +341,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
               {isEditing ? 'Wird überarbeitet …' : isDemoMode ? 'Bearbeitung deaktiviert' : 'Änderung anwenden'}
               {isEditing && <span aria-hidden="true" className="svt-sweep absolute bottom-0 left-0 h-[2px] w-1/3 bg-svt-sand" />}
             </button>
-            {!isDemoMode && <p className="text-[12px] text-black/45">⌘ / Strg + Enter wendet die Änderung an.</p>}
+            {!isDemoMode && <p className="text-[12px] text-black/60">⌘ / Strg + Enter wendet die Änderung an.</p>}
           </div>
 
           <div className="space-y-4 border-t border-svt-green/15 pt-8">

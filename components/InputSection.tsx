@@ -49,7 +49,7 @@ const LineField: React.FC<LineFieldProps> = ({ id, label, value, placeholder, on
       placeholder={placeholder}
       autoComplete="off"
       aria-required="true"
-      className="mt-3 w-full rounded-none border-b border-svt-green/40 bg-transparent pb-3 text-2xl font-light text-black outline-none placeholder:text-black/25 focus-visible:outline-none md:text-[1.75rem]"
+      className="mt-3 w-full rounded-none border-b border-svt-green/40 bg-transparent pb-3 text-2xl font-light text-black outline-none placeholder:text-black/55 focus-visible:outline-none md:text-[1.75rem]"
     />
     <span
       aria-hidden="true"
@@ -160,7 +160,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
 
         <RailSection index={2} label="Bildidee">
           <label htmlFor="vision" className="t-rail text-black/55">
-            Konkrete Elemente <span className="font-normal normal-case tracking-normal text-black/40">— optional</span>
+            Konkrete Elemente <span className="font-normal normal-case tracking-normal text-black/60">— optional</span>
           </label>
           <textarea
             id="vision"
@@ -168,7 +168,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
             onChange={e => setData(prev => ({ ...prev, userVision: e.target.value }))}
             rows={4}
             placeholder="Ein alter Olivenbaum im Sturm. Goldene Risse im Beton. Moderne Architektur bei Nacht."
-            className="mt-3 w-full resize-none rounded-none border border-svt-green/20 bg-white/70 p-4 text-lg font-light leading-relaxed text-black outline-none transition-colors duration-200 placeholder:text-black/30 focus:border-svt-green md:p-5"
+            className="mt-3 w-full resize-none rounded-none border border-svt-green/20 bg-white/70 p-4 text-lg font-light leading-relaxed text-black outline-none transition-colors duration-200 placeholder:text-black/55 focus:border-svt-green md:p-5"
           />
         </RailSection>
 
@@ -200,7 +200,7 @@ const InputSection: React.FC<InputSectionProps> = ({ data, setData, onNext, isLo
 
         <RailSection index={4} label="Referenz">
           <p className="t-rail mb-3 text-black/55">
-            Referenzbild <span className="font-normal normal-case tracking-normal text-black/40">— optional</span>
+            Referenzbild <span className="font-normal normal-case tracking-normal text-black/60">— optional</span>
           </p>
 
           {!data.referenceImage ? (

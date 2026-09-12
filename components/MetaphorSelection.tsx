@@ -135,7 +135,7 @@ const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, on
                   <details className={`group/prompt border-t px-6 py-4 md:px-7 ${on ? 'border-svt-cream/15' : 'border-svt-green/15'}`}>
                     <summary
                       className={`t-rail flex min-h-[28px] cursor-pointer list-none items-center justify-between ${
-                        on ? 'text-svt-cream/60 hover:text-svt-cream' : 'text-black/45 hover:text-black'
+                        on ? 'text-svt-cream/60 hover:text-svt-cream' : 'text-black/60 hover:text-black'
                       }`}
                     >
                       KI-Bildbeschreibung

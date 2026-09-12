@@ -290,7 +290,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
             <button
               type="button"
               onClick={handleForgetToken}
-              className="svt-press t-rail mt-2 inline-flex min-h-[44px] items-center text-black/45 hover:text-black"
+              className="svt-press t-rail mt-2 inline-flex min-h-[44px] items-center text-black/60 hover:text-black"
             >
               Token vergessen
             </button>
@@ -308,7 +308,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
               <span aria-hidden="true" className="relative mx-auto block h-px w-24 overflow-hidden bg-svt-green/15">
                 <span className="svt-sweep absolute inset-y-0 left-0 w-1/3 bg-svt-green" />
               </span>
-              <p aria-live="polite" className="t-rail mt-4 text-black/45">
+              <p aria-live="polite" className="t-rail mt-4 text-black/60">
                 Wird geladen …
               </p>
             </div>
@@ -316,14 +316,14 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
             <div className="py-20 text-center">
               <KeyRound size={26} aria-hidden="true" className="mx-auto text-svt-green/35" />
               <p className="t-untertitel mt-4 text-sm text-black/60">Geschützt</p>
-              <p className="mx-auto mt-1 max-w-xs text-[13px] text-black/45">
+              <p className="mx-auto mt-1 max-w-xs text-[13px] text-black/60">
                 Mit dem Admin-Token lassen sich gespeicherte Entwürfe öffnen.
               </p>
             </div>
           ) : projects.length === 0 ? (
             <div className="py-20 text-center">
               <p className="t-untertitel text-sm text-black/60">Noch keine Entwürfe</p>
-              <p className="mt-1 text-[13px] text-black/45">Gespeichert wird automatisch, sobald Motive entstehen.</p>
+              <p className="mt-1 text-[13px] text-black/60">Gespeichert wird automatisch, sobald Motive entstehen.</p>
             </div>
           ) : (
             <ul className="svt-stagger space-y-2">
@@ -352,7 +352,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
                         >
                           {project.style_mode === 'modern' ? 'Modern' : 'Klassisch'}
                         </span>
-                        <span className="tabular text-[12px] text-black/40">{formatDate(project.created_at)}</span>
+                        <span className="tabular text-[12px] text-black/60">{formatDate(project.created_at)}</span>
                       </span>
                     </span>
                     {loadingProject === project.id ? (
@@ -363,7 +363,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
                       <ChevronRight
                         size={16}
                         aria-hidden="true"
-                        className="mt-0.5 shrink-0 text-black/30 transition-transform duration-200 ease-svt-out group-hover:translate-x-0.5 group-hover:text-black"
+                        className="mt-0.5 shrink-0 text-black/50 transition-transform duration-200 ease-svt-out group-hover:translate-x-0.5 group-hover:text-black"
                       />
                     )}
                   </button>
@@ -372,7 +372,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
                     type="button"
                     onClick={(e) => handleDelete(e, project.id)}
                     aria-label={`Entwurf „${project.verse}“ löschen`}
-                    className="svt-press flex w-11 shrink-0 items-center justify-center border-l border-svt-green/10 text-black/35 hover:bg-svt-cream hover:text-black"
+                    className="svt-press flex w-11 shrink-0 items-center justify-center border-l border-svt-green/10 text-black/55 hover:bg-svt-cream hover:text-black"
                   >
                     <Trash2 size={14} aria-hidden="true" />
                   </button>

@@ -69,7 +69,7 @@ const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, onAdjustPro
           type="button"
           onClick={onDismiss}
           aria-label="Meldung schließen"
-          className="svt-press -mr-2 flex h-11 w-11 shrink-0 items-center justify-center text-black/45 hover:text-black"
+          className="svt-press -mr-2 flex h-11 w-11 shrink-0 items-center justify-center text-black/60 hover:text-black"
         >
           <X size={16} aria-hidden="true" />
         </button>

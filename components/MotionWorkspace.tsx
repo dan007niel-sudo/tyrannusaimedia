@@ -334,7 +334,7 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-6">
                 <div className="flex min-w-[220px] flex-1 items-center gap-3">
-                  <span className="t-rail text-black/45">Oben</span>
+                  <span className="t-rail text-black/60">Oben</span>
                   <label htmlFor="banner-offset" className="sr-only">Lage des 16:9-Ausschnitts</label>
                   <input
                     id="banner-offset"
@@ -346,7 +346,7 @@ const MotionWorkspace: React.FC<MotionWorkspaceProps> = ({ sourceImage, onBack, 
                     onChange={e => setSettings(p => ({ ...p, bannerOffset: Number(e.target.value) }))}
                     className="flex-1 accent-svt-green"
                   />
-                  <span className="t-rail text-black/45">Unten</span>
+                  <span className="t-rail text-black/60">Unten</span>
                 </div>
                 {image && cropLoss !== null && (
                   // Folgt dem Regler ohne Uebergang: Direkte Manipulation muss

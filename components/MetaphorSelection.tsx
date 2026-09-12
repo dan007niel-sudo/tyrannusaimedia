@@ -1,6 +1,9 @@
 import React from 'react';
 import { AppData, AspectRatio } from '../types';
-import { Image as ImageIcon, Check, ChevronLeft, Loader2, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft } from 'lucide-react';
+import { RailSection } from './StepRail';
+import { PrimaryAction } from './PrimaryAction';
+import { CheckMark, RatioGlyph } from './Marks';
 
 interface MetaphorSelectionProps {
   data: AppData;
@@ -11,174 +14,237 @@ interface MetaphorSelectionProps {
   isDemoMode?: boolean;
 }
 
-const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, onGenerate, onBack, isLoading, isDemoMode = false }) => {
-  const handleSelect = (id: string) => {
-    setData(prev => ({ ...prev, selectedMetaphorId: id }));
-  };
+type FormatKey = keyof AppData['selectedFormats'];
 
-  const toggleFormat = (key: keyof typeof data.selectedFormats) => {
-      setData(prev => ({
-          ...prev,
-          selectedFormats: {
-              ...prev.selectedFormats,
-              [key]: !prev.selectedFormats[key]
-          }
-      }));
-  };
+const RESOLUTIONS = ['1K', '2K', '4K'] as const;
+
+const FIXED_FORMATS: { key: Exclude<FormatKey, 'custom'>; label: string; ratio: string }[] = [
+  { key: 'feed', label: 'Feed', ratio: '4:5' },
+  { key: 'story', label: 'Story', ratio: '9:16' },
+  { key: 'banner', label: 'Banner', ratio: '16:9' },
+];
+
+const CUSTOM_RATIOS: { value: AspectRatio; label: string }[] = [
+  { value: '1:1', label: '1:1 · Quadrat' },
+  { value: '4:3', label: '4:3 · Standard' },
+  { value: '4:5', label: '4:5 · Feed' },
+  { value: '3:4', label: '3:4 · Hochformat' },
+  { value: '16:9', label: '16:9 · Querformat' },
+  { value: '9:16', label: '9:16 · Vertikal' },
+];
+
+const MetaphorSelection: React.FC<MetaphorSelectionProps> = ({ data, setData, onGenerate, onBack, isLoading, isDemoMode = false }) => {
+  const handleSelect = (id: string) => setData(prev => ({ ...prev, selectedMetaphorId: id }));
+
+  const toggleFormat = (key: FormatKey) =>
+    setData(prev => ({
+      ...prev,
+      selectedFormats: { ...prev.selectedFormats, [key]: !prev.selectedFormats[key] },
+    }));
+
+  const count = Object.values(data.selectedFormats).filter(Boolean).length;
+  const hasMotif = Boolean(data.selectedMetaphorId);
+
+  // Der Knopf nennt die Menge, statt nur „generieren" zu sagen: wer „3 Bilder
+  // erzeugen" liest, weiss vor dem Klick, was passiert — und was es kostet.
+  const label = isDemoMode ? 'Demo-Bilder anzeigen' : count > 0 ? `${count} ${count === 1 ? 'Bild' : 'Bilder'} erzeugen` : 'Bilder erzeugen';
+  const hint = isLoading
+    ? 'Dauert meist eine halbe Minute, bei 4K länger.'
+    : !hasMotif
+      ? 'Wähle zuerst ein Motiv.'
+      : count === 0
+        ? 'Wähle mindestens ein Format.'
+        : null;
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700 pb-20">
-
-      {/* Header Nav */}
-      <div className="flex items-center justify-between border-y border-black py-5">
-        <button onClick={onBack} className="text-zinc-400 hover:text-black flex items-center gap-2 transition-colors uppercase tracking-widest text-xs font-bold">
-          <ChevronLeft size={16} /> Zurück
-        </button>
-        <div className="text-center">
-          <h2 className="font-brand-display text-2xl md:text-3xl font-black tracking-normal uppercase text-black">Visuelle Richtung</h2>
-        </div>
-        <div className="w-20" />
-      </div>
-
-      {/* Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {data.metaphors.map((metaphor) => {
-          const isSelected = data.selectedMetaphorId === metaphor.id;
-          return (
-            <div
-              key={metaphor.id}
-              onClick={() => handleSelect(metaphor.id)}
-              className={`
-                relative p-8 border cursor-pointer transition-all duration-300 h-full flex flex-col group
-                ${isSelected
-                  ? 'bg-black text-white border-black shadow-2xl scale-[1.02]'
-                  : 'bg-white/76 text-black border-black/10 hover:border-black hover:shadow-lg'
-                }
-              `}
-            >
-              <div className="flex justify-between items-start mb-6">
-                <h3 className={`font-brand-display text-2xl font-black tracking-normal ${isSelected ? 'text-white' : 'text-black'}`}>
-                    {metaphor.title}
-                </h3>
-                {isSelected && <Check size={24} className="text-white" />}
-              </div>
-              <p className={`text-sm leading-relaxed mb-8 flex-grow font-light ${isSelected ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                {metaphor.description}
-              </p>
-              <div className={`mt-auto pt-6 border-t ${isSelected ? 'border-zinc-800' : 'border-[#D6C3A3]'}`}>
-                 <p className={`text-[10px] uppercase tracking-widest font-bold mb-3 ${isSelected ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                    Visual Prompt (Intern)
-                 </p>
-                 <p className={`text-xs font-mono line-clamp-3 ${isSelected ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {metaphor.visualPrompt}
-                 </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Configuration & Controls */}
-      <div className="flex flex-col items-center justify-center space-y-8 pt-8 border-t border-black/10">
-         {isDemoMode ? (
-            <div className="w-full max-w-3xl border border-[#D6C3A3] bg-[#f5f2eb] px-4 py-3 text-center text-sm font-medium leading-relaxed text-[#1F3A2E]">
-                Vorschau-Modus: Formatwahl ist erlaubt, aber die Bilder kommen aus statischen Demo-Daten.
-            </div>
-         ) : null}
-
-         <div className="w-full max-w-3xl space-y-6">
-            <div className="flex items-center justify-center gap-2 text-black mb-4">
-                <Settings2 size={16} />
-                <h3 className="font-bold text-xs uppercase tracking-widest">Format Einstellungen</h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Image Size Selection */}
-                <div className="col-span-full flex justify-center gap-4 mb-4">
-                    {(['1K', '2K', '4K'] as const).map(size => (
-                        <button
-                            key={size}
-                            onClick={() => setData(prev => ({...prev, imageSize: size}))}
-                            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                                data.imageSize === size
-                                ? 'bg-[#1F3A2E] text-white border-[#1F3A2E]'
-                                : 'bg-white/72 text-zinc-500 border-black/10 hover:border-black hover:text-black'
-                            }`}
-                        >
-                            Auflösung: {size}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Format Toggles */}
-                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.feed ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
-                    <span className="text-xs font-bold uppercase tracking-widest">Feed (4:5)</span>
-                    <input
-                        type="checkbox"
-                        checked={data.selectedFormats.feed}
-                        onChange={() => toggleFormat('feed')}
-                        className="accent-black h-4 w-4"
-                    />
-                </label>
-
-                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.story ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
-                    <span className="text-xs font-bold uppercase tracking-widest">Story (9:16)</span>
-                    <input
-                        type="checkbox"
-                        checked={data.selectedFormats.story}
-                        onChange={() => toggleFormat('story')}
-                        className="accent-black h-4 w-4"
-                    />
-                </label>
-
-                <label className={`flex items-center justify-between p-4 border cursor-pointer transition-all ${data.selectedFormats.banner ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
-                    <span className="text-xs font-bold uppercase tracking-widest">Banner (16:9)</span>
-                    <input
-                        type="checkbox"
-                        checked={data.selectedFormats.banner}
-                        onChange={() => toggleFormat('banner')}
-                        className="accent-black h-4 w-4"
-                    />
-                </label>
-
-                <div className={`flex flex-col p-3 border transition-all ${data.selectedFormats.custom ? 'border-black bg-[#f5f2eb]' : 'border-black/10 bg-white/72'}`}>
-                    <label className="flex items-center justify-between mb-2 cursor-pointer">
-                        <span className="text-xs font-bold uppercase tracking-widest">Benutzerdefiniert</span>
-                        <input
-                            type="checkbox"
-                            checked={data.selectedFormats.custom}
-                            onChange={() => toggleFormat('custom')}
-                            className="accent-black h-4 w-4"
-                        />
-                    </label>
-                    <select
-                        disabled={!data.selectedFormats.custom}
-                        value={data.customRatio}
-                        onChange={(e) => setData(prev => ({...prev, customRatio: e.target.value as AspectRatio}))}
-                        className="w-full text-xs border border-black/10 p-2 bg-white outline-none focus:border-black disabled:opacity-50"
-                    >
-                        <option value="1:1">1:1 (Quadrat)</option>
-                        <option value="4:3">4:3 (Standard)</option>
-                        <option value="4:5">4:5 (Feed)</option>
-                        <option value="3:4">3:4 (Portrait)</option>
-                        <option value="16:9">16:9 (Landscape)</option>
-                        <option value="9:16">9:16 (Vertical)</option>
-                    </select>
-                </div>
-            </div>
-         </div>
-
+    <div className="w-full max-w-6xl pb-8">
+      <header className="svt-stagger mb-12 md:mb-16">
         <button
-          onClick={onGenerate}
-          disabled={!data.selectedMetaphorId || isLoading || (!data.selectedFormats.feed && !data.selectedFormats.story && !data.selectedFormats.banner && !data.selectedFormats.custom)}
-          className="w-full max-w-sm bg-black hover:bg-[#1F3A2E] disabled:bg-zinc-100 disabled:text-zinc-300 text-white font-bold py-5 px-8 transition-all flex items-center justify-center gap-3 shadow-2xl mt-8"
+          type="button"
+          onClick={onBack}
+          className="svt-press t-rail -ml-1 inline-flex min-h-[44px] items-center gap-2 px-1 text-black/55 hover:text-black"
         >
-          {isLoading ? (
-             <><Loader2 className="animate-spin" /> <span className="uppercase tracking-widest text-xs">Erweckung sichtbar machen...</span></>
-         ) : (
-            <><ImageIcon size={18} /> <span className="uppercase tracking-widest text-xs">{isDemoMode ? 'Demo-Formate Anzeigen' : 'Ausgewählte Formate Generieren'}</span></>
-          )}
+          <ChevronLeft size={14} aria-hidden="true" /> Zurück zum Vers
         </button>
+        {/* Leerzeichen vor <br />: sonst liest ein Screenreader „Wähleein". */}
+        <h1 className="t-titel mt-4 text-[clamp(2.5rem,6.5vw,5rem)] text-black">
+          Wähle{' '}
+          <br />
+          ein Motiv.
+        </h1>
+        <p className="mt-6 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-lg text-black/65">
+          <span className="t-untertitel text-sm text-svt-green">{data.verse}</span>
+          <span aria-hidden="true" className="text-black/25">·</span>
+          <em>{data.theme}</em>
+        </p>
+      </header>
+
+      <div className="svt-stagger space-y-12 md:space-y-16">
+        {isDemoMode ? (
+          <div className="border-l-2 border-svt-sand bg-svt-cream px-5 py-4 text-sm leading-relaxed text-svt-green">
+            Vorschau-Modus: Formatwahl ist erlaubt, aber die Bilder kommen aus statischen Demo-Daten.
+          </div>
+        ) : null}
+
+        <RailSection index={1} label="Motiv">
+          <div className="grid gap-4 lg:grid-cols-3">
+            {data.metaphors.map((m, i) => {
+              const on = data.selectedMetaphorId === m.id;
+              return (
+                // Die Karte ist ein <article> mit einem echten <button> darin —
+                // nicht selbst klickbar. Sonst waere das Aufklappen darunter ein
+                // interaktives Element in einem interaktiven Element, und das
+                // alte <div onClick> war per Tastatur gar nicht waehlbar.
+                <article
+                  key={m.id}
+                  className={`relative flex flex-col border transition-colors duration-[240ms] ease-svt-out ${
+                    on ? 'border-svt-green bg-svt-green text-svt-cream' : 'border-svt-green/20 bg-white/70 text-black hover:border-svt-green/45'
+                  }`}
+                >
+                  {/* Bei Auswahl zieht sich oben eine Sandlinie — dieselbe Figur
+                      wie in der Schrittanzeige, hier als Bestaetigung. */}
+                  <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px] overflow-hidden">
+                    {on && <span key={`draw-${m.id}`} className="svt-draw block h-full w-full bg-svt-sand" />}
+                  </span>
+
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => handleSelect(m.id)}
+                    className="flex flex-1 flex-col items-start p-6 text-left md:p-7"
+                  >
+                    <span className="flex w-full items-start justify-between">
+                      <span className={`t-highlight text-5xl leading-none transition-colors duration-200 ${on ? 'text-svt-sand' : 'text-svt-green/30'}`}>
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={`mt-1 flex h-6 w-6 items-center justify-center border transition-colors duration-200 ${
+                          on ? 'border-svt-sand bg-svt-sand text-svt-green' : 'border-black/20'
+                        }`}
+                      >
+                        {on && <Check size={14} strokeWidth={3} />}
+                      </span>
+                    </span>
+                    <span className="t-untertitel mt-6 text-base leading-snug md:text-lg">{m.title}</span>{' '}
+                    <span className={`mt-3 text-[15px] leading-relaxed ${on ? 'text-svt-cream/80' : 'text-black/65'}`}>{m.description}</span>
+                  </button>
+
+                  {/* Die englische Bildbeschreibung ist Werkzeug, nicht Inhalt —
+                      zum Aufklappen, statt jede Karte damit zu fuellen. */}
+                  <details className={`group/prompt border-t px-6 py-4 md:px-7 ${on ? 'border-svt-cream/15' : 'border-svt-green/15'}`}>
+                    <summary
+                      className={`t-rail flex min-h-[28px] cursor-pointer list-none items-center justify-between ${
+                        on ? 'text-svt-cream/60 hover:text-svt-cream' : 'text-black/45 hover:text-black'
+                      }`}
+                    >
+                      KI-Bildbeschreibung
+                      <ChevronDown size={14} aria-hidden="true" className="transition-transform duration-200 ease-svt-out group-open/prompt:rotate-180" />
+                    </summary>
+                    <p className={`mt-3 font-mono text-[12px] leading-relaxed ${on ? 'text-svt-cream/70' : 'text-black/55'}`}>{m.visualPrompt}</p>
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        </RailSection>
+
+        <RailSection index={2} label="Auflösung">
+          <div role="group" aria-label="Auflösung" className="grid max-w-md grid-cols-3 gap-px border border-svt-green/25 bg-svt-green/25">
+            {RESOLUTIONS.map(size => {
+              const on = data.imageSize === size;
+              return (
+                <button
+                  key={size}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setData(prev => ({ ...prev, imageSize: size }))}
+                  className={`svt-press t-highlight min-h-[56px] text-[1.75rem] leading-none ${
+                    on ? 'bg-svt-green text-svt-cream' : 'bg-svt-paper text-black hover:bg-white'
+                  }`}
+                >
+                  {size}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-[13px] text-black/55">Höhere Auflösung braucht länger.</p>
+        </RailSection>
+
+        <RailSection index={3} label="Formate">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {FIXED_FORMATS.map(f => {
+              const on = data.selectedFormats[f.key];
+              return (
+                // Echte Checkbox, nur visuell versteckt: Leertaste schaltet,
+                // Screenreader sagen „Kontrollkaestchen, aktiviert".
+                <label
+                  key={f.key}
+                  className={`flex min-h-[116px] cursor-pointer flex-col justify-between border p-4 transition-colors duration-200 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-svt-green ${
+                    on ? 'border-svt-green bg-svt-cream' : 'border-svt-green/20 bg-white/60 hover:border-svt-green/50'
+                  }`}
+                >
+                  <input type="checkbox" className="sr-only" checked={on} onChange={() => toggleFormat(f.key)} />
+                  <span className="flex items-start justify-between">
+                    <RatioGlyph ratio={f.ratio} on={on} />
+                    <CheckMark on={on} />
+                  </span>
+                  <span className="mt-4">
+                    <span className="t-untertitel block text-sm">{f.label}</span>{' '}
+                    <span className="tabular block text-[12px] text-black/50">{f.ratio}</span>
+                  </span>
+                </label>
+              );
+            })}
+
+            <div
+              className={`flex min-h-[116px] flex-col justify-between border p-4 transition-colors duration-200 ${
+                data.selectedFormats.custom ? 'border-svt-green bg-svt-cream' : 'border-svt-green/20 bg-white/60'
+              }`}
+            >
+              <label className="flex cursor-pointer items-start justify-between focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-svt-green">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={data.selectedFormats.custom}
+                  onChange={() => toggleFormat('custom')}
+                />
+                <RatioGlyph ratio={data.customRatio} on={data.selectedFormats.custom} />
+                <CheckMark on={data.selectedFormats.custom} />
+                <span className="sr-only">Eigenes Format</span>
+              </label>
+              <span className="mt-4">
+                <span className="t-untertitel block text-sm">Eigenes</span>
+                {/* 16 px auf dem Handy: darunter zoomt iOS beim Oeffnen. */}
+                <select
+                  aria-label="Seitenverhältnis für das eigene Format"
+                  disabled={!data.selectedFormats.custom}
+                  value={data.customRatio}
+                  onChange={e => setData(prev => ({ ...prev, customRatio: e.target.value as AspectRatio }))}
+                  className="mt-1 w-full cursor-pointer rounded-none border-0 border-b border-svt-green/30 bg-transparent py-1 text-base text-black outline-none focus:border-svt-green disabled:cursor-not-allowed disabled:opacity-45 md:text-[13px]"
+                >
+                  {CUSTOM_RATIOS.map(r => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </div>
+          </div>
+        </RailSection>
+
+        <div className="border-t border-svt-green/15 pt-8 md:pt-10">
+          <div className="md:ml-[calc(var(--rail)_+_2.5rem)]">
+            <PrimaryAction
+              label={label}
+              loadingLabel="Bilder werden erzeugt …"
+              state={isLoading ? 'loading' : hasMotif && count > 0 ? 'ready' : 'blocked'}
+              onClick={onGenerate}
+              hint={hint}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

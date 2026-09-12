@@ -6,6 +6,8 @@ import ImageWorkspace from './components/ImageWorkspace';
 import MotionWorkspace from './components/MotionWorkspace';
 import ErrorDisplay, { AppError } from './components/ErrorDisplay';
 import ProjectHistory from './components/ProjectHistory';
+import { StepTrack } from './components/StepRail';
+import { BackendStatus, useBackendStatus } from './services/backendStatus';
 import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
 import { Clock, Eye, Film } from 'lucide-react';
 import { createDemoAppData, createDemoImages, DEMO_METAPHORS, isDemoMode } from './utils/demoMode';
@@ -22,10 +24,19 @@ const TyrannusLogo = () => (
   />
 );
 
+// Kurz gehalten: auf 375 px teilt sich die Kopfzeile Logo, Historie und Status.
+const STATUS_LABEL: Record<BackendStatus, string> = {
+  waking: 'Startet',
+  ready: 'Bereit',
+  offline: 'Offline',
+};
+
 // ─── Main Application ────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
   const demoMode = isDemoMode();
+  // In der Vorschau wird nichts aufgerufen — also auch nichts geweckt.
+  const backendStatus = useBackendStatus(!demoMode);
   const [data, setData] = useState<AppData>(() => demoMode
     ? createDemoAppData()
     : {
@@ -268,13 +279,26 @@ const App: React.FC = () => {
             isDemoMode={demoMode}
           />
           {firstImage && (
-            <div className="mt-10 flex justify-center border-t border-black/10 pt-8">
-              <button
-                onClick={() => openMotion(firstImage)}
-                className="flex items-center gap-2 border border-black px-5 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-black hover:text-white"
-              >
-                <Film size={12} /> Dieses Bild in Bewegung bringen
-              </button>
+            // Uebergabe an Schritt 4 — als Zeile im selben Raster wie der Rest,
+            // nicht als zentrierter Einzelknopf ohne Zusammenhang.
+            <div className="mt-12 border-t border-svt-green/15 pt-10">
+              <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="t-rail flex items-center gap-3 text-svt-green">
+                    <span className="tabular">04</span>
+                    <span className="block h-px w-6 bg-current" aria-hidden="true" />
+                    Bewegung
+                  </p>
+                  <p className="mt-2 text-[14px] text-black/60">Aus dem Standbild einen ruhigen Loop für Story, Feed oder Fernseher machen.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openMotion(firstImage)}
+                  className="svt-press t-rail inline-flex min-h-[44px] items-center gap-2 bg-svt-green px-6 py-3 text-svt-cream hover:bg-black"
+                >
+                  <Film size={13} aria-hidden="true" /> Dieses Bild in Bewegung bringen
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -296,59 +320,83 @@ const App: React.FC = () => {
   // ─── App Shell ───────────────────────────────────────────────────────────
 
   return (
-    <div className="brand-surface min-h-screen text-black selection:bg-black selection:text-white flex flex-col">
+    <div className="svt-surface flex min-h-screen flex-col text-black selection:bg-svt-green selection:text-svt-cream">
 
-      {/* Header */}
-      <header className="px-4 md:px-10 py-3 md:py-4 border-b border-black/10 flex flex-row justify-between items-center bg-[#fbfaf7]/95 backdrop-blur-sm sticky top-0 z-50 gap-4">
-        
-        {/* Logo */}
-        <div className="flex-shrink-0">
-          <TyrannusLogo />
-        </div>
+      {/* Kopfzeile: Logo, Schrittfigur, Werkzeuge. Flach und ohne Unschaerfe —
+          Blur ist fuer Ebenen, die etwas verdecken, nicht zur Dekoration. */}
+      <header className="sticky top-0 z-50 border-b border-svt-green/15 bg-svt-paper">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-3 md:gap-6 md:px-10 md:py-4">
+          <div className="flex-shrink-0">
+            <TyrannusLogo />
+          </div>
 
-        {/* Status + History */}
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-3">
-            {/* History Button */}
+          <div className="hidden md:block">
+            <StepTrack current={state.step} />
+          </div>
+
+          <div className="flex items-center gap-2">
             {!demoMode ? (
+              // Auf dem Handy nur das Symbol — mit aria-label, damit der Knopf
+              // seinen Namen behaelt. 44 px: kleinste zuverlaessige Tippflaeche.
               <button
+                type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/70 hover:bg-white border border-black/10 hover:border-black transition-all cursor-pointer"
+                aria-label="Historie"
+                className="svt-press t-rail flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 border border-svt-green/20 px-3 text-black/70 hover:border-black hover:text-black"
               >
-                <Clock size={12} className="text-[#1F3A2E]" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 hover:text-black">Historie</span>
+                <Clock size={12} className="text-svt-green" aria-hidden="true" />
+                <span className="hidden sm:inline">Historie</span>
               </button>
             ) : null}
 
-            <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-[#1F3A2E] text-white border border-[#1F3A2E]">
-              {demoMode ? (
+            {demoMode ? (
+              <div className="t-rail flex min-h-[44px] items-center gap-2 bg-svt-green px-3 text-svt-cream">
                 <Eye size={12} aria-hidden="true" />
-              ) : (
-                <div className="w-1.5 h-1.5 bg-[#D6C3A3] animate-pulse"></div>
-              )}
-              <span className="text-[10px] font-bold uppercase tracking-widest">
-                {demoMode ? (
-                  <span>Vorschau</span>
-                ) : (
+                Vorschau
+              </div>
+            ) : (
+              // Echter Zustand statt festem „Bereit". Die laufende Linie gibt es
+              // nur, solange der Server aufwacht — hoechstens eine Minute, danach
+              // steht der Chip still. Dauerhafte Bewegung waere Rauschen.
+              <div
+                role="status"
+                aria-live="polite"
+                title={backendStatus === 'waking' ? 'Der Server schläft nach 15 Minuten ohne Nutzung ein und braucht bis zu einer Minute.' : undefined}
+                className={`t-rail relative flex min-h-[44px] items-center gap-2 overflow-hidden px-3 ${
+                  backendStatus === 'offline' ? 'border border-svt-sand bg-svt-cream text-black' : 'bg-svt-green text-svt-cream'
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 ${
+                    backendStatus === 'ready' ? 'bg-svt-sand' : backendStatus === 'waking' ? 'bg-svt-cream/50' : 'bg-black'
+                  }`}
+                />
+                {STATUS_LABEL[backendStatus]}
+                {backendStatus === 'waking' && (
                   <>
-                    <span className="sm:hidden">Ready</span>
-                    <span className="hidden sm:inline">System Ready</span>
+                    <span className="sr-only">— der Server wacht auf, das kann bis zu einer Minute dauern</span>
+                    <span aria-hidden="true" className="svt-sweep absolute bottom-0 left-0 h-[2px] w-1/3 bg-svt-sand" />
                   </>
                 )}
-              </span>
-            </div>
+              </div>
+            )}
           </div>
+        </div>
+
+        <div className="border-t border-svt-green/10 px-4 py-2.5 md:hidden">
+          <StepTrack current={state.step} />
         </div>
       </header>
 
       {demoMode ? (
-        <div className="border-b border-[#D6C3A3] bg-[#1F3A2E] px-4 py-3 text-center text-xs font-bold uppercase tracking-widest text-white">
-          Besucher-Vorschau: KI-Generierung, Bearbeitung, Speicherung und Historie sind deaktiviert.
+        <div className="t-rail border-b border-svt-sand bg-svt-green px-4 py-3 text-center text-svt-cream">
+          Besucher-Vorschau — KI-Generierung, Bearbeitung, Speicherung und Historie sind deaktiviert.
         </div>
       ) : null}
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-9 md:py-14 flex flex-col items-center justify-center flex-grow">
+      <main className="mx-auto flex w-full max-w-[1400px] flex-grow flex-col items-center px-4 py-12 md:px-10 md:py-20">
         {/* Structured Error Display */}
         {appError && (
           <ErrorDisplay
@@ -361,19 +409,27 @@ const App: React.FC = () => {
         {renderContent()}
 
         {/* Eigenstaendiger Einstieg: der woechentliche Fall ist ein Flyer, der
-            schon fertig ist — dafuer braucht es die Konzeptphase nicht. */}
+            schon fertig ist — dafuer braucht es die Konzeptphase nicht. Gleiches
+            Spaltenraster wie das Formular darueber. */}
         {state.step === 'input' && (
-          <div className="mt-10 w-full max-w-3xl border-t border-black/10 pt-8 text-center">
-            <button
-              onClick={() => openMotion(null)}
-              className="inline-flex items-center gap-2 border border-black/20 px-5 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors hover:border-black hover:bg-black hover:text-white"
-            >
-              <Film size={12} /> Fertigen Flyer animieren
-            </button>
-            <p className="mt-2 text-[11px] text-zinc-500">
-              Ohne Konzeptphase: Flyer hochladen, Bewegung wählen, fertig.
-            </p>
-          </div>
+          <aside className="svt-rise mt-16 w-full max-w-5xl border-t border-svt-green/15 pt-10 md:mt-20">
+            <div className="grid gap-4 md:grid-cols-[var(--rail)_1fr] md:gap-10">
+              <p className="t-rail text-svt-green md:pt-1">Direkt</p>
+              <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="t-untertitel text-sm">Der Flyer ist schon fertig?</p>
+                  <p className="mt-1 text-[13px] text-black/55">Ohne Konzeptphase: hochladen, Bewegung wählen, fertig.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openMotion(null)}
+                  className="svt-press t-rail inline-flex min-h-[44px] items-center gap-2 border border-black px-5 py-3 hover:bg-black hover:text-svt-paper"
+                >
+                  <Film size={13} aria-hidden="true" /> Flyer animieren
+                </button>
+              </div>
+            </div>
+          </aside>
         )}
       </main>
 

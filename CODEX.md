@@ -39,6 +39,41 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
 
 ## Lessons Learned
 
+- 2026-09-11
+  - Symptom: Keine einzige Eintrittsanimation der App lief je — weder beim Eingabe-Screen noch bei Motivwahl, Ergebnis, Fehleranzeige oder Historie-Leiste. Die Leiste sprang einfach auf.
+  - Ursache: Die Klassen `animate-in`, `fade-in`, `slide-in-from-*`, `zoom-in-95` stammen aus dem Plugin `tailwindcss-animate`. Das war nie installiert (`plugins: []` in tailwind.config.js). Tailwind erzeugt fuer unbekannte Klassen einfach nichts — ohne Warnung.
+  - Fix: Eigene Keyframes in index.css (`svt-rise`, `svt-stagger`, `svt-develop`, `svt-draw`, `svt-sweep`, `svt-drawer-*`), jeweils mit `prefers-reduced-motion`-Fassung.
+  - Praevention/Test: Jede Animationsklasse, die nicht aus dem Tailwind-Kern kommt, gegen tailwind.config pruefen. `grep -rn "animate-in" --include=*.tsx` gehoert in jeden Design-Review.
+
+- 2026-09-11
+  - Symptom: `text-[var(--svt-cream)]/45` blieb wirkungslos — der gedaempfte Text hatte volle Deckkraft.
+  - Ursache: Tailwind 3 kann einen Deckkraft-Modifikator nicht auf eine CSS-Variable anwenden, deren Wert ein Hex-Code ist. Es entsteht keine Regel, und niemand merkt es.
+  - Fix: Markenfarben als echte Tokens in tailwind.config (`svt.green`, `svt.sage`, `svt.sand`, `svt.cream`, `svt.paper`). Damit greift `text-svt-cream/45`.
+  - Praevention/Test: Farben nie als Arbitrary-Variable mit Deckkraft-Suffix schreiben.
+
+- 2026-09-11
+  - Symptom: Kopflose Chrome-Screenshots bei 390 px zeigten auf jedem Screen rechts abgeschnittenen Inhalt. Eine Messung in echter Handy-Emulation ergab dagegen `scrollWidth = clientWidth` — kein Ueberlauf.
+  - Ursache: Chrome klemmt auch kopflos die Fensterbreite auf ein Minimum (`--headless=new` und `--headless=old` gleichermassen). Das Layout entsteht breiter, das Bild wird nur beschnitten. Wer dem Bild glaubt, repariert einen Fehler, den es nicht gibt, und uebersieht den echten: Die Kopfzeile lief bei 375 px tatsaechlich 18 px ueber.
+  - Fix: Pruefseite `dist/qa.html` laedt die App in einem iframe der gewuenschten Breite — Media Queries richten sich nach dem iframe, nicht nach dem Fenster. Sie liegt in dist/ und verschwindet mit jedem Build, wird also nie ausgeliefert.
+  - Praevention/Test: Handy-Bilder nur ueber das iframe. Ueberlauf zusaetzlich per `scrollWidth` in echter Emulation messen. Achtung: `vh` rechnet im iframe gegen dessen Hoehe, ein 2700 px hohes iframe blaeht `62vh` auf 1674 px auf.
+
+- 2026-09-11
+  - Symptom: Der Kopfzeilen-Chip zeigte dauerhaft „System Ready" — auch waehrend Render Free schlief und 53 s zum Aufwachen brauchte.
+  - Ursache: Der Text stand fest im Code; es gab keine Abfrage.
+  - Fix: `services/backendStatus.ts` fragt beim Laden `/api/health` ab und zeigt „Startet", bis der Server antwortet. Nebenwirkung mit Absicht: Die Abfrage weckt den Dienst, der Kaltstart laeuft parallel zum Eintippen von Vers und Thema.
+  - Praevention/Test: Statusanzeigen nie statisch. Was „bereit" sagt, muss es geprueft haben.
+
+- 2026-09-11
+  - Symptom: Der Bewegtbild-Screen versprach bei „Story", der Flyer werde oben und unten „unscharf aufgefuellt".
+  - Ursache: Commit ef888d3 hat die unscharfe Bildkopie durch einen Farbverlauf aus den Randfarben ersetzt (Geisterschrift im Streifen), den Hinweistext aber nicht angefasst.
+  - Fix: Text beschreibt jetzt den Verlauf.
+  - Praevention/Test: UI-Texte beschreiben Verhalten. Wer das Verhalten aendert, sucht im selben Commit nach Texten, die es beschreiben.
+
+- 2026-09-11
+  - Symptom: Ueberschriften wie „Vom Vers / zum Bild." las ein Screenreader als „Verszum".
+  - Ursache: JSX verschluckt den Zeilenumbruch zwischen Text und `<br />`, und `<br />` selbst traegt keinen Wortabstand.
+  - Fix: `{' '}` vor jedes `<br />` in Ueberschriften.
+  - Praevention/Test: `h1.textContent` nach jeder mehrzeiligen Ueberschrift pruefen.
 - 2026-09-10
   - Symptom: Kein Ausfall — beim Deep Dive gefunden, bevor er eintrat. `gemini-2.5-flash-image` (Bildgenerierung UND -bearbeitung) hatte Abschaltung am 02.10.2026, `gemini-3-flash-preview` (Brainstorm) war bereits deprecated. Drei Wochen Vorlauf, niemand haette es gemerkt, bis die App stillsteht.
   - Ursache: Modell-IDs standen als Literale in drei Funktionsruempfen (`server.py` Brainstorm/Generierung/Bearbeitung). Es gab keine Stelle, an der ablesbar war, welche Modelle die App ueberhaupt benutzt — und keinen Anlass, Googles Deprecations-Seite je wieder zu lesen. Verschaerfend: fuer den Brainstorm war urspruenglich eine **Preview**-ID gewaehlt worden. Preview-Fassungen werden ohne Vorlauf abgekuendigt; das ist kein Unfall, sondern ihre Zusage.

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Clock, Trash2, ChevronRight, Loader2, BookOpen, KeyRound } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronRight, Clock, KeyRound, Trash2, X } from 'lucide-react';
 import { fetchProjects, fetchProject, deleteProject, ProjectSummary } from '../services/geminiService';
 import { AppData, Metaphor } from '../types';
 
@@ -31,6 +31,19 @@ const writeStoredHistoryToken = (token: string) => {
   }
 };
 
+/** Dauer der Ausfahrt — muss zur CSS-Animation `svt-drawer-out` passen. */
+const EXIT_MS = 180;
+
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Seitenleiste mit gespeicherten Entwuerfen.
+ *
+ * Vorher war sie optisch eine Leiste, technisch aber kein Dialog: kein Escape,
+ * der Fokus blieb draussen, und die Tastatur tabbte hinter der Abdeckung
+ * weiter durch die App. Jetzt: `role="dialog"`, Fokus beim Oeffnen hinein und
+ * beim Schliessen zurueck auf den ausloesenden Knopf, Tab bleibt in der Leiste.
+ */
 const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoadProject }) => {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,6 +51,10 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
   const [historyToken, setHistoryToken] = useState(readStoredHistoryToken);
   const [tokenDraft, setTokenDraft] = useState(historyToken);
   const [error, setError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -49,6 +66,51 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
       }
     }
   }, [isOpen]);
+
+  // Fokus hinein beim Oeffnen, zurueck beim Schliessen — sonst landet ein
+  // Tastaturnutzer nach dem Schliessen irgendwo am Seitenanfang.
+  useEffect(() => {
+    if (!isOpen) return;
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    const target =
+      panelRef.current?.querySelector<HTMLElement>('[data-autofocus]') ??
+      panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    target?.focus();
+    return () => {
+      returnFocusRef.current?.focus?.();
+    };
+  }, [isOpen]);
+
+  // Kurze Ausfahrt statt hartem Verschwinden. Die Leiste bleibt dafuer 180 ms
+  // montiert; Ausfahrt ist bewusst schneller als Einfahrt.
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, EXIT_MS);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      requestClose();
+      return;
+    }
+    if (e.key !== 'Tab' || !panelRef.current) return;
+    const focusables = [...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   const loadProjects = async (token = historyToken): Promise<boolean> => {
     if (!token.trim()) return false;
@@ -128,7 +190,7 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
         },
         metaphors,
       );
-      onClose();
+      requestClose();
     } catch (e: any) {
       console.error('Failed to load project:', e);
       setError(e?.appError?.message || 'Projekt konnte nicht geladen werden.');
@@ -166,46 +228,61 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Abdeckung: flach, ohne Unschaerfe. 40 % Schwarz trennt die Leiste
+          deutlich vom Hintergrund und kostet — anders als Blur — nichts. */}
       <div
-        className="fixed inset-0 bg-black/35 backdrop-blur-sm z-50 animate-in fade-in duration-200"
-        onClick={onClose}
+        aria-hidden="true"
+        onClick={requestClose}
+        className={`fixed inset-0 z-50 bg-black/40 ${closing ? 'svt-fade-out' : 'svt-fade-in'}`}
       />
 
-      {/* Panel */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-[#fbfaf7] shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300 border-l border-black">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-black/10">
-          <div className="flex items-center gap-3">
-            <Clock size={18} className="text-zinc-400" />
-            <h2 className="font-brand-display text-lg font-black tracking-normal">Projekt-Historie</h2>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="history-title"
+        onKeyDown={handleKeyDown}
+        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col border-l border-black bg-svt-paper ${
+          closing ? 'svt-drawer-out' : 'svt-drawer-in'
+        }`}
+      >
+        <header className="flex items-start justify-between border-b border-svt-green/15 px-6 py-5">
+          <div>
+            <p className="t-rail flex items-center gap-2 text-svt-green">
+              <Clock size={12} aria-hidden="true" /> Gespeicherte Entwürfe
+            </p>
+            <h2 id="history-title" className="t-titel mt-3 text-3xl text-black">
+              Historie.
+            </h2>
           </div>
           <button
-            onClick={onClose}
-            className="p-2 hover:bg-white transition-colors"
+            type="button"
+            onClick={requestClose}
+            aria-label="Historie schließen"
+            className="svt-press -mr-2 flex h-11 w-11 items-center justify-center text-black/55 hover:text-black"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
-        </div>
+        </header>
 
-        {/* Auth */}
-        <form onSubmit={handleSaveToken} className="p-4 border-b border-black/10 bg-white/55">
-          <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
-            <KeyRound size={12} />
+        <form onSubmit={handleSaveToken} className="border-b border-svt-green/15 bg-white/50 px-6 py-5">
+          <label htmlFor="history-token" className="t-rail flex items-center gap-2 text-black/55">
+            <KeyRound size={12} aria-hidden="true" />
             Historie-Token
           </label>
-          <div className="flex gap-2">
+          <div className="mt-3 flex gap-2">
+            {/* 16 px auf dem Handy: darunter zoomt iOS beim Fokussieren. */}
             <input
+              id="history-token"
               type="password"
               value={tokenDraft}
               onChange={(e) => setTokenDraft(e.target.value)}
-              placeholder="Admin-Token eingeben"
-              className="min-w-0 flex-1 bg-white border border-black/10 px-3 py-2 text-sm outline-none focus:border-black"
+              placeholder="Admin-Token"
+              autoComplete="current-password"
+              data-autofocus={!historyToken.trim() ? true : undefined}
+              className="min-w-0 flex-1 rounded-none border border-svt-green/25 bg-white px-3 py-2.5 text-base outline-none focus:border-svt-green md:text-sm"
             />
-            <button
-              type="submit"
-              className="bg-black text-white px-4 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#1F3A2E] transition-colors"
-            >
+            <button type="submit" className="svt-press t-rail min-h-[44px] bg-svt-green px-4 text-svt-cream hover:bg-black">
               Laden
             </button>
           </div>
@@ -213,81 +290,95 @@ const ProjectHistory: React.FC<ProjectHistoryProps> = ({ isOpen, onClose, onLoad
             <button
               type="button"
               onClick={handleForgetToken}
-              className="mt-2 text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-black transition-colors"
+              className="svt-press t-rail mt-2 inline-flex min-h-[44px] items-center text-black/45 hover:text-black"
             >
               Token vergessen
             </button>
           )}
           {error && (
-            <p className="mt-2 text-xs text-red-600 leading-relaxed">{error}</p>
+            <p role="alert" className="mt-3 border-l-2 border-black bg-svt-cream px-4 py-3 text-[13px] leading-relaxed text-black/80">
+              {error}
+            </p>
           )}
         </form>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-              <Loader2 size={24} className="animate-spin mb-3" />
-              <span className="text-xs uppercase tracking-widest">Öffne den Raum...</span>
+            <div className="py-20 text-center">
+              <span aria-hidden="true" className="relative mx-auto block h-px w-24 overflow-hidden bg-svt-green/15">
+                <span className="svt-sweep absolute inset-y-0 left-0 w-1/3 bg-svt-green" />
+              </span>
+              <p aria-live="polite" className="t-rail mt-4 text-black/45">
+                Wird geladen …
+              </p>
             </div>
           ) : !historyToken.trim() ? (
-            <div className="flex flex-col items-center justify-center py-20 text-zinc-300">
-              <KeyRound size={32} className="mb-4" />
-              <p className="text-sm font-medium text-zinc-400">Geschützter Raum</p>
-              <p className="text-xs text-zinc-300 mt-1 text-center max-w-xs">
-                Gib das Admin-Token ein, um gespeicherte Entwürfe zu öffnen.
+            <div className="py-20 text-center">
+              <KeyRound size={26} aria-hidden="true" className="mx-auto text-svt-green/35" />
+              <p className="t-untertitel mt-4 text-sm text-black/60">Geschützt</p>
+              <p className="mx-auto mt-1 max-w-xs text-[13px] text-black/45">
+                Mit dem Admin-Token lassen sich gespeicherte Entwürfe öffnen.
               </p>
             </div>
           ) : projects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-zinc-300">
-              <BookOpen size={32} className="mb-4" />
-              <p className="text-sm font-medium text-zinc-400">Noch kein Entwurf sichtbar</p>
-              <p className="text-xs text-zinc-300 mt-1">Beginne mit Wort, Thema und Vision.</p>
+            <div className="py-20 text-center">
+              <p className="t-untertitel text-sm text-black/60">Noch keine Entwürfe</p>
+              <p className="mt-1 text-[13px] text-black/45">Gespeichert wird automatisch, sobald Motive entstehen.</p>
             </div>
           ) : (
-            projects.map((project) => (
-              <div
-                key={project.id}
-                onClick={() => handleLoadProject(project.id)}
-                className="group relative bg-white/78 border border-black/10 hover:border-black p-5 cursor-pointer transition-all hover:shadow-md"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-sm text-black truncate">{project.verse}</h3>
-                    <p className="text-xs text-zinc-500 font-light truncate mt-0.5">{project.theme}</p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                    {loadingProject === project.id ? (
-                      <Loader2 size={14} className="animate-spin text-zinc-400" />
-                    ) : (
-                      <ChevronRight size={14} className="text-zinc-300 group-hover:text-black transition-colors" />
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-sm ${
-                      project.style_mode === 'modern'
-                        ? 'bg-[#1F3A2E] text-white'
-                        : 'bg-[#D6C3A3]/35 text-[#1F3A2E]'
-                    }`}>
-                      {project.style_mode === 'modern' ? 'Modern' : 'Klassisch'}
-                    </span>
-                    <span className="text-[10px] text-zinc-300">
-                      {formatDate(project.created_at)}
-                    </span>
-                  </div>
-
+            <ul className="svt-stagger space-y-2">
+              {projects.map((project) => (
+                // Laden und Loeschen sind zwei Knoepfe nebeneinander, nicht
+                // ineinander: ein Knopf im Knopf ist ungueltig, und das alte
+                // <div onClick> war per Tastatur gar nicht erreichbar.
+                <li
+                  key={project.id}
+                  className="group flex border border-svt-green/15 bg-white/70 transition-colors duration-200 hover:border-svt-green/45"
+                >
                   <button
-                    onClick={(e) => handleDelete(e, project.id)}
-                    className="p-1.5 text-zinc-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                    type="button"
+                    onClick={() => handleLoadProject(project.id)}
+                    disabled={loadingProject !== null}
+                    className="flex min-w-0 flex-1 items-start justify-between gap-3 px-4 py-4 text-left disabled:cursor-wait"
                   >
-                    <Trash2 size={12} />
+                    <span className="min-w-0">
+                      <span className="t-untertitel block truncate text-sm text-black">{project.verse}</span>
+                      <span className="mt-0.5 block truncate text-[13px] italic text-black/55">{project.theme}</span>
+                      <span className="mt-3 flex items-center gap-2">
+                        <span
+                          className={`t-rail px-2 py-1 ${
+                            project.style_mode === 'modern' ? 'bg-svt-green text-svt-cream' : 'bg-svt-sand/40 text-svt-green'
+                          }`}
+                        >
+                          {project.style_mode === 'modern' ? 'Modern' : 'Klassisch'}
+                        </span>
+                        <span className="tabular text-[12px] text-black/40">{formatDate(project.created_at)}</span>
+                      </span>
+                    </span>
+                    {loadingProject === project.id ? (
+                      <span aria-live="polite" className="t-rail mt-0.5 shrink-0 text-svt-green">
+                        Lädt …
+                      </span>
+                    ) : (
+                      <ChevronRight
+                        size={16}
+                        aria-hidden="true"
+                        className="mt-0.5 shrink-0 text-black/30 transition-transform duration-200 ease-svt-out group-hover:translate-x-0.5 group-hover:text-black"
+                      />
+                    )}
                   </button>
-                </div>
-              </div>
-            ))
+                  {/* Immer sichtbar — vorher nur bei Hover, auf dem Handy also nie. */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(e, project.id)}
+                    aria-label={`Entwurf „${project.verse}“ löschen`}
+                    className="svt-press flex w-11 shrink-0 items-center justify-center border-l border-svt-green/10 text-black/35 hover:bg-svt-cream hover:text-black"
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>

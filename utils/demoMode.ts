@@ -11,7 +11,7 @@ export const DEMO_METAPHORS: Metaphor[] = [
     id: "demo-renewed-mind",
     title: "Der erneuerte Blick",
     description:
-      "Eine ruhige Bildmetapher fuer Transformation: alte Gedankenmuster werden abgelegt, waehrend Gottes Wahrheit den Blick neu ausrichtet.",
+      "Eine ruhige Bildmetapher für Transformation: alte Gedankenmuster werden abgelegt, während Gottes Wahrheit den Blick neu ausrichtet.",
     visualPrompt:
       "A cinematic editorial photograph of a person standing before a softly lit mirror, fragmented paper notes dissolving into warm morning light, symbolic of renewed thinking and spiritual transformation, elegant natural textures, realistic lighting.",
   },
@@ -19,15 +19,15 @@ export const DEMO_METAPHORS: Metaphor[] = [
     id: "demo-living-stone",
     title: "Lebendige Steine",
     description:
-      "Ein Motiv fuer Gemeinschaft und Aufbau: einzelne Steine werden zu einem tragfaehigen Haus, nicht durch Uniformitaet, sondern durch Verbundenheit.",
+      "Ein Motiv für Gemeinschaft und Aufbau: einzelne Steine werden zu einem tragfähigen Haus, nicht durch Uniformität, sondern durch Verbundenheit.",
     visualPrompt:
       "A realistic editorial scene of diverse natural stones arranged into a growing architectural form, golden seams of light between them, symbolizing unity, service, and spiritual formation, cinematic depth of field.",
   },
   {
     id: "demo-water-in-desert",
-    title: "Wasser in der Wuestenstadt",
+    title: "Wasser in der Wüstenstadt",
     description:
-      "Eine starke visuelle Richtung fuer Hoffnung: mitten in trockener Umgebung bricht Leben hervor, klar, hell und nicht kitschig.",
+      "Eine starke visuelle Richtung für Hoffnung: mitten in trockener Umgebung bricht Leben hervor, klar, hell und nicht kitschig.",
     visualPrompt:
       "A modern cinematic photograph of clear water flowing through a dry urban courtyard, green life emerging subtly from cracks in stone, hopeful but restrained, editorial composition, natural light.",
   },
@@ -68,9 +68,9 @@ export function createDemoImages(): GeneratedImages {
 
 export function createDemoAppData(): AppData {
   return {
-    verse: "Roemer 12:2",
+    verse: "Römer 12,2",
     theme: "Erneuerung des Sinnes",
-    userVision: "Editorialer Social-Media-Post fuer ein Medien-Team.",
+    userVision: "Editorialer Social-Media-Post für ein Medien-Team.",
     referenceImage: null,
     styleMode: "modern",
     metaphors: DEMO_METAPHORS,

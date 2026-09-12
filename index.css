@@ -2,6 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Tyrannus AI Media — Gestaltungsfundament
+
+   Quelle ist die offizielle Brand Guideline der Schule von Tyrannus (37 Seiten,
+   `07 Anhaenge/SvT Brand Kit/Brand Guideline.pdf`), nicht die verkuerzte
+   Markdown-Zusammenfassung. Drei Dinge stehen dort, die hier tragend sind:
+
+   1. Das nummerierte Typo-System (1 TITEL / 2 UNTERTITEL / 3 TEXT /
+      4 HIGHLIGHTS), gesetzt mit einer Haarlinie zwischen Ziffer und Label.
+      Diese Figur ist hier die Schrittanzeige der App.
+   2. Das Layoutprinzip: schmale linke Label-Spalte, breiter Inhaltsblock auf
+      getoentem Panel.
+   3. „Weissraum als Gestaltungselement · Konsistenz · Reduktion auf das
+      Wesentliche." Jedes Element erfuellt einen Zweck oder faellt weg.
+
+   Die Guideline zeigt Lila-/Blau-Verlaeufe ZWEIMAL ausdruecklich als falsche
+   Anwendung. Diese Datei enthaelt deshalb keinen Farbverlauf als Dekoration —
+   Flaechen sind flach, Struktur kommt aus Linie und Raum.
+
+   Die Dachmarke wird NICHT nachgezeichnet. Als Strukturmotiv dient allein der
+   WINKEL der Dachschraege — Geometrie, nicht Bildmarke. Das Logo bleibt die
+   unveraenderte Originaldatei.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Farbwelt (Primaerfarben, Guideline-Seite „FARBWELT") ───────────────── */
+  --svt-green: #1f3a2e;
+  --svt-sage: #8fa79b;
+  --svt-sand: #d6c3a3;
+  --svt-cream: #f2eee6;
+  --svt-ink: #000000;
+  --svt-paper: #fbfaf7;
+
+  /* Abgeleitet, nur fuer Linien und Flaechen — nie fuer Text auf Creme. */
+  --rule-hair: rgba(31, 58, 46, 0.16);
+  --rule-strong: rgba(31, 58, 46, 0.38);
+  --panel: rgba(255, 255, 255, 0.72);
+
+  /* ── Bewegung ────────────────────────────────────────────────────────────
+     Die eingebauten CSS-Easings sind zu schwach; sie lassen Bewegung
+     unentschlossen wirken. Diese Kurven sind kraeftiger.
+     `ease-in` kommt bewusst nirgends vor: es startet langsam und wirkt damit
+     genau in dem Moment traege, in dem der Nutzer am genauesten hinsieht. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  --dur-press: 160ms;
+  --dur-enter: 300ms;
+  --dur-panel: 240ms;
+  /* Austritt schneller als Eintritt — sonst fuehlt sich Schliessen zaeh an. */
+  --dur-exit: 180ms;
+
+  --rail: 132px;
+}
+
 @font-face {
   font-family: 'Creato Display';
   src: url('/fonts/CreatoDisplay-Regular.woff') format('woff');
@@ -19,33 +74,248 @@
 }
 
 body {
-  font-family: 'Creato Display', sans-serif;
-  background-color: #fbfaf7;
-  color: #000000;
+  font-family: 'Creato Display', ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--svt-paper);
+  color: var(--svt-ink);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* Ziffern in Massangaben duerfen beim Zaehlen nicht springen. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ── Typo-Ebenen, benannt wie in der Guideline ────────────────────────────── */
+
+.t-titel {
+  font-family: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  /* Enge Zeilen: die Guideline setzt Titel zweizeilig und sehr dicht. */
+  line-height: 0.88;
+  letter-spacing: -0.02em;
+}
+
+.t-untertitel {
+  font-family: 'Creato Display', ui-sans-serif, sans-serif;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.t-highlight {
+  font-family: 'Bebas Neue', 'Montserrat', ui-sans-serif, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+/* Kursiv als Betonung — die Guideline nutzt das durchgaengig:
+   „Gott begegnen", „geistlicher Raum". Kein zweiter Farbton noetig. */
+.t-emph {
+  font-style: italic;
+}
+
+/* Das kleine, fette Grossbuchstaben-Label der linken Spalte. */
+.t-rail {
+  font-family: 'Montserrat', ui-sans-serif, sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 1.25;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ── Flaechen ─────────────────────────────────────────────────────────────── */
+
+/* Arbeitsflaeche. Strukturmotiv ist der Winkel der Dachschraege als feines
+   diagonales Linienfeld. Bewusst sehr schwach: Tiefe geben, nicht auffallen. */
+.svt-surface {
+  background-color: var(--svt-paper);
+  background-image: repeating-linear-gradient(
+    130deg,
+    rgba(31, 58, 46, 0.035) 0px,
+    rgba(31, 58, 46, 0.035) 1px,
+    transparent 1px,
+    transparent 22px
+  );
+}
+
+/* Die dunkle Flaeche fuer die Momente, die zaehlen. Die Guideline setzt dafuer
+   volle Flaechen mit heller Schrift — dort Schwarz, hier die Primaerfarbe. */
+.svt-deep {
+  background-color: var(--svt-green);
+  color: var(--svt-cream);
+  background-image: repeating-linear-gradient(
+    130deg,
+    rgba(255, 255, 255, 0.045) 0px,
+    rgba(255, 255, 255, 0.045) 1px,
+    transparent 1px,
+    transparent 22px
+  );
+}
+
+/* Getoentes Inhaltspanel — die Guideline legt Fliesstext auf eine Flaeche
+   gegen den helleren Grund. */
+.svt-panel {
+  background-color: var(--panel);
+  border: 1px solid var(--rule-hair);
+}
+
+/* Korn. Auf den Social-Beispielen der Guideline deutlich sichtbar; ohne das
+   wirken grosse Flaechen digital-glatt statt gedruckt. */
+.svt-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
+}
+
+/* ── Bewegung ─────────────────────────────────────────────────────────────── */
+
+/* Gestaffelter Eintritt. Die Verzoegerung bleibt kurz (44 ms): laengere
+   Staffelung laesst die Oberflaeche langsam wirken statt lebendig. */
+@keyframes svt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.svt-rise {
+  animation: svt-rise var(--dur-enter) var(--ease-out) both;
+}
+
+.svt-stagger > * {
+  animation: svt-rise var(--dur-enter) var(--ease-out) both;
+}
+.svt-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.svt-stagger > *:nth-child(2) { animation-delay: 44ms; }
+.svt-stagger > *:nth-child(3) { animation-delay: 88ms; }
+.svt-stagger > *:nth-child(4) { animation-delay: 132ms; }
+.svt-stagger > *:nth-child(5) { animation-delay: 176ms; }
+.svt-stagger > *:nth-child(6) { animation-delay: 220ms; }
+.svt-stagger > *:nth-child(n + 7) { animation-delay: 264ms; }
+
+/* Die Signatur der App: ein fertiges Bild kommt hoch wie ein Abzug, der sich
+   entwickelt — von unten aufgedeckt, dabei aus der Unschaerfe.
+   `clip-path` und `filter` statt Hoehe: keine Layoutberechnung, laeuft auf der
+   GPU. Nie aus `scale(0)`: nichts in der Wirklichkeit entsteht aus nichts. */
+@keyframes svt-develop {
+  from {
+    clip-path: inset(0 0 100% 0);
+    filter: blur(12px);
+    opacity: 0.5;
+    transform: scale(1.015);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.svt-develop {
+  animation: svt-develop 620ms var(--ease-out) both;
+}
+
+/* Die Haarlinie der Schrittanzeige zieht sich selbst — die Figur aus der
+   Guideline (1 ——— TITEL) wird zur Bewegung. */
+@keyframes svt-draw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.svt-draw {
+  transform-origin: left center;
+  animation: svt-draw 420ms var(--ease-out) both;
+}
+
+/* Druckfeedback. Ohne das fuehlt sich eine Flaeche tot an, egal wie sie
+   aussieht. Subtil halten — 0.97, nicht weniger. */
+.svt-press {
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-press) var(--ease-out),
+    color var(--dur-press) var(--ease-out),
+    border-color var(--dur-press) var(--ease-out);
+}
+.svt-press:active {
+  transform: scale(0.97);
+}
+
+/* Hover nur dort, wo es wirklich einen Zeiger gibt. Auf Touch loest Hover beim
+   Tippen aus und laesst Zustaende haengen. */
+@media (hover: hover) and (pointer: fine) {
+  .svt-hover-rule:hover {
+    border-color: var(--rule-strong);
+  }
+}
+
+/* ── Zugaenglichkeit ──────────────────────────────────────────────────────── */
+
+/* Reduzierte Bewegung heisst weniger und sanfter, nicht null: Deckkraft bleibt,
+   weil sie beim Verstehen hilft; Verschiebung und Skalierung fallen weg. */
+@media (prefers-reduced-motion: reduce) {
+  .svt-rise,
+  .svt-stagger > *,
+  .svt-draw {
+    animation-duration: 1ms;
+    animation-delay: 0ms !important;
+  }
+
+  .svt-develop {
+    animation: none;
+  }
+
+  .svt-press:active {
+    transform: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Fokus muss sichtbar bleiben. Kantig, passend zum Rest — kein weicher Ring. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--svt-green);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 10px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #e5e5e5;
-  border-radius: 3px;
+  background: var(--rule-hair);
+  border: 3px solid var(--svt-paper);
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #a3a3a3;
+  background: var(--rule-strong);
 }
 
-.font-serif-logo {
-  font-family: 'Montserrat', sans-serif;
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+   Altbestand — noch in Benutzung, waehrend die Screens nacheinander umgestellt
+   werden. Faellt weg, sobald keine Komponente diese Klassen mehr nutzt; bis
+   dahin wuerde ein Entfernen die noch nicht umgebauten Ansichten zerlegen.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
+.font-serif-logo,
 .font-brand-display {
   font-family: 'Montserrat', sans-serif;
 }
@@ -63,7 +333,96 @@ body {
 }
 
 .brand-surface {
-  background:
-    linear-gradient(90deg, rgba(31, 58, 46, 0.045) 0 1px, transparent 1px) 0 0 / 84px 84px,
-    #fbfaf7;
+  background-color: var(--svt-paper);
+  background-image: repeating-linear-gradient(
+    130deg,
+    rgba(31, 58, 46, 0.035) 0px,
+    rgba(31, 58, 46, 0.035) 1px,
+    transparent 1px,
+    transparent 22px
+  );
+}
+
+/* ── Nachtrag: unbestimmter Fortschritt ─────────────────────────────────────
+   Fuer Wartezeiten ohne bekannte Dauer (Motive, Bildgenerierung: 10-20 s).
+   Eine Linie laeuft durch statt eines Spinners — dieselbe Haarlinie wie
+   ueberall sonst. Konstante Bewegung ist der eine Fall, in dem `linear`
+   richtig ist. */
+@keyframes svt-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+.svt-sweep {
+  animation: svt-sweep 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svt-sweep {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+/* ── Nachtrag: Aufklappbares ohne Standard-Dreieck ──────────────────────────
+   Safari zeichnet das Dreieck ueber ein eigenes Pseudo-Element; `list-none`
+   allein reicht dort nicht. Ersetzt wird es durch einen drehenden Pfeil. */
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ── Nachtrag: kurze Entwicklung ────────────────────────────────────────────
+   Dieselbe Figur wie `svt-develop`, fuer den blossen Formatwechsel. Wer
+   zwischen Feed und Story hin- und herschaltet, sieht jedes Mal einen eigenen
+   Abzug — aber ohne jedes Mal eine halbe Sekunde zu warten. */
+.svt-develop-fast {
+  animation: svt-develop 320ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svt-develop-fast {
+    animation: none;
+  }
+}
+
+/* ── Nachtrag: Seitenleiste ──────────────────────────────────────────────────
+   Einfahrt mit der iOS-nahen Schubladenkurve, Ausfahrt kuerzer als Einfahrt:
+   Schliessen soll sich nie zaeh anfuehlen. Nur `transform` und `opacity` —
+   keine Layoutberechnung, laeuft auf der GPU. */
+:root {
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes svt-drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@keyframes svt-drawer-out {
+  from { transform: none; }
+  to { transform: translateX(100%); }
+}
+@keyframes svt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes svt-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.svt-drawer-in { animation: svt-drawer-in 320ms var(--ease-drawer) both; }
+.svt-drawer-out { animation: svt-drawer-out 180ms var(--ease-out) both; }
+.svt-fade-in { animation: svt-fade-in 240ms var(--ease-out) both; }
+.svt-fade-out { animation: svt-fade-out 180ms var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .svt-drawer-in,
+  .svt-drawer-out {
+    animation: none;
+  }
+  .svt-fade-in,
+  .svt-fade-out {
+    animation-duration: 1ms;
+  }
 }

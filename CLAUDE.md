@@ -66,3 +66,7 @@ Qualitätstor: `measureSeam()` misst die Schleife auf den **rohen** Frames, nie 
 ## Hinweis
 
 Detaillierte Arbeitsregeln, 3-Agent-Workflow und Lessons Learned: siehe `CODEX.md`.
+
+Einrichtung und Vertrauensgrenzen der geschätzten KI-Reserve: siehe
+`docs/credit-estimate-setup.md`. Die dortige Supabase-Migration wird nie
+automatisch aus einer lokalen Entwicklungssitzung gegen Produktion ausgeführt.

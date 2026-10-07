@@ -79,6 +79,7 @@ export interface AppData {
   selectedMetaphorId: string | null;
   generatedImages: GeneratedImages; 
   generatedImageErrors: GeneratedImageErrors;
+  editPrompts: Record<string, string>;
   imageSize: ImageSize;
   // Configuration for generation
   selectedFormats: {

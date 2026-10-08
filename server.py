@@ -17,6 +17,7 @@ import tempfile
 import time
 import traceback
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -42,6 +43,18 @@ MAX_DOWNLOAD_FORM_BYTES = ((MAX_DOWNLOAD_IMAGE_BYTES + 2) // 3) * 4 + 1024
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 SAFE_DOWNLOAD_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
+
+def is_billing_error(error: Exception) -> bool:
+    """Prefer structured SDK status, with exact provider text as fallback."""
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    if status == 402 or str(status) == "402":
+        return True
+    error_lower = str(error).lower()
+    return any(kw in error_lower for kw in [
+        "payment required", "prepayment credits are depleted",
+        "credits are depleted", "insufficient credit",
+    ])
+
 def classify_gemini_error(error: Exception) -> HTTPException:
     """
     Classify a Gemini API error into a user-friendly HTTP response.
@@ -51,6 +64,19 @@ def classify_gemini_error(error: Exception) -> HTTPException:
     """
     msg = str(error)
     error_lower = msg.lower()
+
+    # Billing failures can also carry RESOURCE_EXHAUSTED. Check payment
+    # evidence first so an empty prepaid balance is never disguised as a short
+    # rate limit that asks the team to wait and retry.
+    if is_billing_error(error):
+        return HTTPException(
+            status_code=402,
+            detail=json.dumps({
+                "message": "Das KI-Guthaben ist aufgebraucht. Eure Eingaben bleiben erhalten. Bitte Guthaben prüfen oder aufladen; danach könnt ihr den Vorgang bewusst erneut starten.",
+                "errorType": "BILLING_REQUIRED",
+                "retryable": False,
+            })
+        )
 
     # Permission / Auth errors
     if any(kw in error_lower for kw in ["api key not valid", "permission_denied", "403", "unauthorized", "401"]):
@@ -184,6 +210,140 @@ IMAGE_BUCKET = "generated-images"
 # die Funktion trotzdem — die Clips haengen dann nur am Job und verfallen mit
 # ihm (MOTION_JOB_TTL).
 MOTION_BUCKET = os.environ.get("MOTION_BUCKET", "generated-motion")
+
+# Google exposes no verified balance endpoint for this account. The app shows
+# only an admin-confirmed, conservative estimate backed by the optional
+# Supabase migration. Missing schema/config is an honest, supported state.
+CREDIT_ESTIMATE_CAVEAT = "Nur Verbrauch dieser App; andere Apps und automatische Aufladungen sind nicht enthalten."
+credit_estimate_uncertain = False
+credit_estimate_confirmed_this_process = False
+
+
+class CreditEstimateConfig(BaseModel):
+    confirmedBalanceUsd: float = Field(ge=0)
+    warningThresholdUsd: float = Field(ge=0)
+    brainstormAllowanceUsd: float = Field(gt=0)
+    image1kAllowanceUsd: float = Field(gt=0)
+    image2kAllowanceUsd: float = Field(gt=0)
+    image4kAllowanceUsd: float = Field(gt=0)
+    editAllowanceUsd: float = Field(gt=0)
+    staleAfterHours: int = Field(default=72, ge=1, le=720)
+
+
+def unconfigured_credit_status(reason: str = "not_configured") -> dict:
+    return {
+        "state": "unconfigured" if reason == "not_configured" else "unknown",
+        "estimatedReserveUsd": None,
+        "warningThresholdUsd": None,
+        "lastConfirmedAt": None,
+        "staleAfterHours": None,
+        "reason": reason,
+        "caveat": CREDIT_ESTIMATE_CAVEAT,
+    }
+
+
+def _rpc_payload(data) -> dict | None:
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0]
+    return None
+
+
+def get_credit_estimate(expose_amounts: bool = False) -> dict:
+    if not supabase_client:
+        return unconfigured_credit_status("persistence_unavailable")
+    try:
+        result = supabase_client.rpc("get_credit_estimate").execute()
+        payload = _rpc_payload(result.data)
+        if not payload:
+            return unconfigured_credit_status()
+        if credit_estimate_uncertain and payload.get("state") != "depleted":
+            payload.update({
+                "state": "unknown",
+                "estimatedReserveUsd": None,
+                "reason": "local_usage_reservation_failed",
+            })
+        if not credit_estimate_confirmed_this_process and payload.get("state") != "depleted":
+            payload.update({
+                "state": "unknown",
+                "estimatedReserveUsd": None,
+                "reason": "requires_runtime_confirmation",
+            })
+        if not expose_amounts:
+            payload["estimatedReserveUsd"] = None
+            payload["warningThresholdUsd"] = None
+            payload["lastConfirmedAt"] = None
+            payload["staleAfterHours"] = None
+        payload["caveat"] = CREDIT_ESTIMATE_CAVEAT
+        return payload
+    except Exception as exc:
+        print(f"⚠️  Credit estimate unavailable: {exc}")
+        return unconfigured_credit_status("estimate_unavailable")
+
+
+def reserve_credit_usage(operation: str, image_size: str | None = None) -> str | None:
+    """Reserve a conservative allowance immediately before a billable call.
+
+    Failed ledger writes do not stop the social team's production work. The
+    public estimate becomes unknown until a fresh balance is confirmed.
+    """
+    global credit_estimate_uncertain
+    if not supabase_client:
+        credit_estimate_uncertain = True
+        return None
+    try:
+        result = supabase_client.rpc("reserve_credit_usage", {
+            "p_operation": operation,
+            "p_image_size": image_size,
+        }).execute()
+        payload = _rpc_payload(result.data)
+        reservation_id = payload.get("reservationId") if payload else None
+        if not isinstance(reservation_id, str):
+            raise RuntimeError("Credit reservation did not return an event id.")
+        return reservation_id
+    except Exception as exc:
+        credit_estimate_uncertain = True
+        print(f"⚠️  Credit usage reservation failed; estimate is incomplete: {exc}")
+        try:
+            supabase_client.rpc("mark_credit_estimate_uncertain", {
+                "p_reason": "usage_reservation_failed",
+            }).execute()
+        except Exception as marker_exc:
+            print(f"⚠️  Credit uncertainty marker also failed: {marker_exc}")
+        return None
+
+
+def finish_credit_usage(reservation_id: str | None, outcome: str) -> None:
+    global credit_estimate_uncertain
+    if not reservation_id or not supabase_client:
+        return
+    try:
+        supabase_client.rpc("finish_credit_usage", {
+            "p_reservation_id": reservation_id,
+            "p_outcome": outcome,
+        }).execute()
+    except Exception as exc:
+        credit_estimate_uncertain = True
+        print(f"⚠️  Credit usage settlement failed; estimate is incomplete: {exc}")
+        try:
+            supabase_client.rpc("mark_credit_estimate_uncertain", {
+                "p_reason": "usage_settlement_failed",
+            }).execute()
+        except Exception as marker_exc:
+            print(f"⚠️  Credit uncertainty marker also failed: {marker_exc}")
+
+
+def mark_credit_provider_result(succeeded: bool, started_at: str) -> None:
+    if not supabase_client:
+        return
+    function = "mark_credit_provider_success" if succeeded else "mark_credit_provider_depleted"
+    parameter = "p_started_at" if succeeded else "p_observed_at"
+    value = started_at if succeeded else datetime.now(timezone.utc).isoformat()
+    try:
+        supabase_client.rpc(function, {parameter: value}).execute()
+    except Exception as exc:
+        print(f"⚠️  Could not persist provider billing state: {exc}")
 
 # ─── Modelle ──────────────────────────────────────────────────────────────────
 #
@@ -520,28 +680,40 @@ async def api_brainstorm(req: BrainstormRequest):
         parts.append(build_reference_part(req.referenceImage))
     parts.append(types.Part(text=prompt))
 
+    call_started_at = datetime.now(timezone.utc).isoformat()
     try:
-        response = await client.aio.models.generate_content(
-            model=TEXT_MODEL,
-            contents=types.Content(parts=parts),
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION_BRAINSTORM,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "ARRAY",
-                    "items": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "id": {"type": "STRING"},
-                            "title": {"type": "STRING"},
-                            "description": {"type": "STRING"},
-                            "visualPrompt": {"type": "STRING"},
+        reservation_id = reserve_credit_usage("brainstorm")
+        provider_outcome = "uncertain"
+        try:
+            response = await client.aio.models.generate_content(
+                model=TEXT_MODEL,
+                contents=types.Content(parts=parts),
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION_BRAINSTORM,
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "id": {"type": "STRING"},
+                                "title": {"type": "STRING"},
+                                "description": {"type": "STRING"},
+                                "visualPrompt": {"type": "STRING"},
+                            },
+                            "required": ["id", "title", "description", "visualPrompt"],
                         },
-                        "required": ["id", "title", "description", "visualPrompt"],
                     },
-                },
-            ),
-        )
+                ),
+            )
+            provider_outcome = "succeeded"
+            mark_credit_provider_result(True, call_started_at)
+        except Exception as provider_error:
+            if is_billing_error(provider_error):
+                provider_outcome = "failed"
+            raise
+        finally:
+            finish_credit_usage(reservation_id, provider_outcome)
 
         text = response.text
         if not text:
@@ -588,6 +760,8 @@ async def api_brainstorm(req: BrainstormRequest):
     except HTTPException:
         raise
     except Exception as e:
+        if is_billing_error(e):
+            mark_credit_provider_result(False, call_started_at)
         print(f"⚠️  Brainstorm error: {e}")
         traceback.print_exc()
         raise classify_gemini_error(e)
@@ -610,6 +784,9 @@ async def _generate_single_image(
     parts.append(types.Part(text=full_prompt))
 
     # Wrap in timeout to prevent hanging requests
+    call_started_at = datetime.now(timezone.utc).isoformat()
+    reservation_id = reserve_credit_usage("image", size)
+    provider_outcome = "uncertain"
     try:
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
@@ -625,8 +802,17 @@ async def _generate_single_image(
             ),
             timeout=IMAGE_GEN_TIMEOUT_SECONDS,
         )
+        provider_outcome = "succeeded"
+        mark_credit_provider_result(True, call_started_at)
     except asyncio.TimeoutError:
         raise Exception(f"TIMEOUT: Bildgenerierung für {aspect_ratio} hat nach {IMAGE_GEN_TIMEOUT_SECONDS}s nicht geantwortet.")
+    except Exception as exc:
+        if is_billing_error(exc):
+            provider_outcome = "failed"
+            mark_credit_provider_result(False, call_started_at)
+        raise
+    finally:
+        finish_credit_usage(reservation_id, provider_outcome)
 
     # Check for safety blocks
     check_safety_block(response)
@@ -697,8 +883,9 @@ async def api_generate_images(req: GenerateImagesRequest):
 
     if all_failed and errors_by_type:
         # Return the most specific/important error
-        # Priority: PERMISSION > CONTENT_BLOCKED > RATE_LIMITED > TIMEOUT > others
-        priority = ["PERMISSION_DENIED", "CONTENT_BLOCKED", "RATE_LIMITED", "TIMEOUT", "MODEL_UNAVAILABLE", "SERVER_ERROR"]
+        # A depleted balance must not be collapsed into a generic 500 or a
+        # retryable quota message when every requested format failed.
+        priority = ["BILLING_REQUIRED", "PERMISSION_DENIED", "CONTENT_BLOCKED", "RATE_LIMITED", "TIMEOUT", "MODEL_UNAVAILABLE", "SERVER_ERROR"]
         for prio_type in priority:
             if prio_type in errors_by_type:
                 err = errors_by_type[prio_type]
@@ -766,6 +953,9 @@ async def api_edit_image(req: EditImageRequest):
         ),
     ]
 
+    call_started_at = datetime.now(timezone.utc).isoformat()
+    reservation_id = reserve_credit_usage("edit")
+    provider_outcome = "uncertain"
     try:
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
@@ -777,6 +967,8 @@ async def api_edit_image(req: EditImageRequest):
             ),
             timeout=IMAGE_GEN_TIMEOUT_SECONDS,
         )
+        provider_outcome = "succeeded"
+        mark_credit_provider_result(True, call_started_at)
 
         # Check for safety blocks
         check_safety_block(response)
@@ -804,9 +996,14 @@ async def api_edit_image(req: EditImageRequest):
     except HTTPException:
         raise
     except Exception as e:
+        if is_billing_error(e):
+            provider_outcome = "failed"
+            mark_credit_provider_result(False, call_started_at)
         print(f"⚠️  Edit error: {e}")
         traceback.print_exc()
         raise classify_gemini_error(e)
+    finally:
+        finish_credit_usage(reservation_id, provider_outcome)
 
 
 # ─── API: Save Image References (after client confirms) ────────────────────
@@ -1032,6 +1229,54 @@ async def health():
         # diesen Endpunkt.
         "server_motion_available": motion_available(),
     }
+
+
+@app.get("/api/credit-status")
+async def api_credit_status():
+    """Return an estimate, never a claim about the provider's live balance."""
+    return get_credit_estimate()
+
+
+@app.get("/api/admin/credit-estimate")
+async def api_admin_credit_estimate(_: None = Depends(ensure_history_admin)):
+    status = get_credit_estimate(expose_amounts=True)
+    config = None
+    if supabase_client:
+        try:
+            result = supabase_client.table("credit_estimate_config").select("*").eq("id", True).limit(1).execute()
+            config = result.data[0] if result.data else None
+        except Exception as exc:
+            print(f"⚠️  Credit config unavailable: {exc}")
+    return {"status": status, "config": config}
+
+
+@app.put("/api/admin/credit-estimate")
+async def api_update_credit_estimate(
+    req: CreditEstimateConfig,
+    _: None = Depends(ensure_history_admin),
+):
+    if not supabase_client:
+        raise structured_error(503, "Reserve kann ohne Supabase nicht gespeichert werden.", "SERVER_ERROR", False)
+    global credit_estimate_uncertain, credit_estimate_confirmed_this_process
+    try:
+        supabase_client.rpc("confirm_credit_estimate", {
+            "p_confirmed_balance_usd": req.confirmedBalanceUsd,
+            "p_warning_threshold_usd": req.warningThresholdUsd,
+            "p_brainstorm_allowance_usd": req.brainstormAllowanceUsd,
+            "p_image_1k_allowance_usd": req.image1kAllowanceUsd,
+            "p_image_2k_allowance_usd": req.image2kAllowanceUsd,
+            "p_image_4k_allowance_usd": req.image4kAllowanceUsd,
+            "p_edit_allowance_usd": req.editAllowanceUsd,
+            "p_stale_after_hours": req.staleAfterHours,
+        }).execute()
+        credit_estimate_uncertain = False
+        credit_estimate_confirmed_this_process = True
+    except Exception as exc:
+        print(f"⚠️  Credit config save failed: {exc}")
+        if "credit_calls_in_flight" in str(exc):
+            raise structured_error(409, "Es laufen noch KI-Anfragen. Bitte warte auf deren Abschluss und bestätige den Stand danach erneut.", "SERVER_ERROR", True)
+        raise structured_error(503, "Reserve-Konfiguration konnte nicht gespeichert werden. Ist die Migration eingespielt?", "SERVER_ERROR", False)
+    return {"saved": True, "status": get_credit_estimate(expose_amounts=True)}
 
 
 # ─── API: Motion (Flyer → Bewegtbild, Stufe „Ambient") ───────────────────

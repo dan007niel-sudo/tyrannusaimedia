@@ -39,6 +39,17 @@ Wenn echte Subagents verfuegbar und vom Nutzer gewuenscht sind, werden diese Rol
 
 ## Lessons Learned
 
+- 2026-10-07
+  - Symptom: Ein aufgebrauchtes Prepaid-Guthaben erschien als „Zu viele Anfragen"; bei einem 402 in nur einem Bildformat blieb der konkrete Grund sogar hinter den erfolgreichen Tabs verborgen.
+  - Ursache: Die Fehlerklassifikation prüfte `RESOURCE_EXHAUSTED` vor dem Zahlungsstatus, die All-failed-Priorität kannte Billing nicht und die Teilfehler-UI nannte nur die Formatnamen.
+  - Fix: Strukturierter/konkreter 402 wird zuerst als nicht wiederholbarer `BILLING_REQUIRED` behandelt; vollständige und partielle Fehler zeigen den Guthabengrund. Ein bestätigter Reservestand plus konservatives, atomar reserviertes Nutzungsledger liefert eine ausdrücklich begrenzte Schätzung.
+  - Praevention/Test: Zahlungsstatus, Ratenlimit und Teilfehler separat mocken. Eine Reserveanzeige nie als Provider-Kontostand oder Zusage formulieren.
+- 2026-10-07
+  - Symptom: Nach Neuladen gingen Eingaben und große lokale Bilder verloren; „Erneut versuchen" konnte mit den Daten des ersten Renders statt der aktuellen Eingaben laufen.
+  - Ursache: Es gab keinen lokalen Entwurf und der Retry-Callback hatte eine leere Dependency-Liste.
+  - Fix: Vollständiger Entwurf in IndexedDB mit explizitem Wiederherstellen/Verwerfen und erst nach Transaktions-Commit bestätigtem Speicherstatus; Retry bindet die aktuellen Aktionen. Bezahlte Aktionen starten nach Reload nie automatisch.
+  - Praevention/Test: Reload mit Referenz- und Ergebnisbild prüfen, Storage-Abbruch sichtbar machen und vor Retry Eingaben ändern.
+
 - 2026-09-11
   - Symptom: Keine einzige Eintrittsanimation der App lief je — weder beim Eingabe-Screen noch bei Motivwahl, Ergebnis, Fehleranzeige oder Historie-Leiste. Die Leiste sprang einfach auf.
   - Ursache: Die Klassen `animate-in`, `fade-in`, `slide-in-from-*`, `zoom-in-95` stammen aus dem Plugin `tailwindcss-animate`. Das war nie installiert (`plugins: []` in tailwind.config.js). Tailwind erzeugt fuer unbekannte Klassen einfach nichts — ohne Warnung.

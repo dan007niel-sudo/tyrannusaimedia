@@ -11,6 +11,7 @@
 
 import { Metaphor, ImageSize, GeneratedImages, AspectRatio, MotionJob, MotionSettings } from "../types";
 import { AppError } from "../components/ErrorDisplay";
+import { announceCreditStatusChanged } from "./creditService";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ async function handleResponse(response: Response): Promise<any> {
 function mapHttpToErrorType(status: number): AppError['errorType'] {
   switch (status) {
     case 403: case 401: return 'PERMISSION_DENIED';
+    case 402: return 'BILLING_REQUIRED';
     case 422: return 'CONTENT_BLOCKED';
     case 413: return 'UPLOAD_TOO_LARGE';
     case 415: return 'UPLOAD_INVALID';
@@ -160,20 +162,17 @@ export const generateMetaphors = async (
   styleMode: "classic" | "modern" = "classic",
   referenceImage: string | null = null
 ): Promise<{ metaphors: Metaphor[]; projectId: string | null }> => {
-  const response = await fetchWithTimeout("/api/brainstorm", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      verse,
-      theme,
-      userVision,
-      styleMode,
-      referenceImage,
-    }),
-  }, BRAINSTORM_TIMEOUT_MS);
-
-  const data = await handleResponse(response);
-  return { metaphors: data.metaphors, projectId: data.projectId || null };
+  try {
+    const response = await fetchWithTimeout("/api/brainstorm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verse, theme, userVision, styleMode, referenceImage }),
+    }, BRAINSTORM_TIMEOUT_MS);
+    const data = await handleResponse(response);
+    return { metaphors: data.metaphors, projectId: data.projectId || null };
+  } finally {
+    announceCreditStatusChanged();
+  }
 };
 
 // ─── Multi-Format Image Generation ──────────────────────────────────────────
@@ -187,22 +186,17 @@ export const generateMultiFormatImages = async (
   projectId: string | null = null,
   metaphorId: string | null = null,
 ): Promise<{ images: GeneratedImages; storedUrls: Record<string, string>; errors: Record<string, AppError> }> => {
-  const response = await fetchWithTimeout("/api/generate-images", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      metaphorPrompt,
-      imageSize: size,
-      requests,
-      styleMode,
-      referenceImage,
-      projectId,
-      metaphorId,
-    }),
-  }, IMAGE_GEN_TIMEOUT_MS);
-
-  const data = await handleResponse(response);
-  return { images: data.images, storedUrls: data.storedUrls || {}, errors: data.errors || {} };
+  try {
+    const response = await fetchWithTimeout("/api/generate-images", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metaphorPrompt, imageSize: size, requests, styleMode, referenceImage, projectId, metaphorId }),
+    }, IMAGE_GEN_TIMEOUT_MS);
+    const data = await handleResponse(response);
+    return { images: data.images, storedUrls: data.storedUrls || {}, errors: data.errors || {} };
+  } finally {
+    announceCreditStatusChanged();
+  }
 };
 
 // ─── Image Editing ───────────────────────────────────────────────────────────
@@ -211,17 +205,17 @@ export const editImage = async (
   currentImageBase64: string,
   editInstruction: string
 ): Promise<string> => {
-  const response = await fetchWithTimeout("/api/edit-image", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      imageBase64: currentImageBase64,
-      editInstruction,
-    }),
-  }, EDIT_TIMEOUT_MS);
-
-  const data = await handleResponse(response);
-  return data.image;
+  try {
+    const response = await fetchWithTimeout("/api/edit-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageBase64: currentImageBase64, editInstruction }),
+    }, EDIT_TIMEOUT_MS);
+    const data = await handleResponse(response);
+    return data.image;
+  } finally {
+    announceCreditStatusChanged();
+  }
 };
 
 // ─── Project History ──────────────────────────────────────────────────────

@@ -52,7 +52,7 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
   const availableKeys = Object.keys(data.generatedImages).filter(k => data.generatedImages[k] !== null);
   const [activeKey, setActiveKey] = useState<string>(availableKeys[0] || 'feed');
 
-  const [editPrompt, setEditPrompt] = useState('');
+  const editPrompt = data.editPrompts?.[activeKey] ?? '';
   const [isEditing, setIsEditing] = useState(false);
   const [editError, setEditError] = useState<AppError | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -151,7 +151,10 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
           }
       }));
       setFullDevelop(true);
-      setEditPrompt('');
+      setData(prev => ({
+        ...prev,
+        editPrompts: { ...(prev.editPrompts || {}), [activeKey]: '' },
+      }));
       setDownloadError(null);
     } catch (err) {
       setEditError(extractAppError(err));
@@ -215,6 +218,17 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
               <p className="mt-1.5 text-[14px] leading-relaxed text-black/75">
                 {failedKeys.map(key => getLabel(key).text).join(', ')} konnte nicht erzeugt werden. Die erfolgreichen Formate bleiben verfügbar.
               </p>
+              <ul className="mt-3 space-y-2 border-t border-black/10 pt-3 text-[13px] leading-relaxed text-black/75">
+                {failedKeys.map(key => {
+                  const failure = data.generatedImageErrors[key];
+                  return (
+                    <li key={key}>
+                      <strong>{getLabel(key).text}:</strong> {failure.message}
+                      {failure.errorType === 'BILLING_REQUIRED' ? ' Es erfolgt kein automatischer erneuter Versuch.' : ''}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
           {isDemoMode && (
@@ -299,7 +313,10 @@ const ImageWorkspace: React.FC<ImageWorkspaceProps> = ({ data, setData, onBack, 
             <textarea
               id="edit-prompt"
               value={editPrompt}
-              onChange={(e) => setEditPrompt(e.target.value)}
+              onChange={(e) => setData(prev => ({
+                ...prev,
+                editPrompts: { ...(prev.editPrompts || {}), [activeKey]: e.target.value },
+              }))}
               // Wer mehrere Aenderungen hintereinander probiert, soll dafuer
               // nicht jedes Mal zur Maus greifen.
               onKeyDown={(e) => {

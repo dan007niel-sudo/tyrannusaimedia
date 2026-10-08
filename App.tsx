@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { AppData, GenerationState, AspectRatio, Metaphor } from './types';
 import InputSection from './components/InputSection';
 import MetaphorSelection from './components/MetaphorSelection';
@@ -6,11 +6,15 @@ import ImageWorkspace from './components/ImageWorkspace';
 import MotionWorkspace from './components/MotionWorkspace';
 import ErrorDisplay, { AppError } from './components/ErrorDisplay';
 import ProjectHistory from './components/ProjectHistory';
+import CreditStatusBanner from './components/CreditStatusBanner';
+import CreditAdmin from './components/CreditAdmin';
+import DraftControls, { DraftSaveState } from './components/DraftControls';
 import { StepTrack } from './components/StepRail';
 import { BackendStatus, useBackendStatus } from './services/backendStatus';
 import { generateMetaphors, generateMultiFormatImages, extractAppError } from './services/geminiService';
-import { Clock, Eye, Film } from 'lucide-react';
+import { Clock, CreditCard, Eye, Film } from 'lucide-react';
 import { createDemoAppData, createDemoImages, DEMO_METAPHORS, isDemoMode } from './utils/demoMode';
+import { deleteDraft, DraftValidationError, loadDraft, saveDraft, SavedDraft } from './services/draftStorage';
 
 // ─── Schule von Tyrannus Logo ────────────────────────────────────────────────
 
@@ -49,6 +53,7 @@ const App: React.FC = () => {
       selectedMetaphorId: null,
       generatedImages: {},
       generatedImageErrors: {},
+      editPrompts: {},
       imageSize: '1K',
       selectedFormats: {
         feed: true,
@@ -73,6 +78,7 @@ const App: React.FC = () => {
 
   // Project history panel
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [creditAdminOpen, setCreditAdminOpen] = useState(false);
 
   // Current project ID (from Supabase)
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -81,6 +87,85 @@ const App: React.FC = () => {
   // erzeugten Bild oder aus einem eigenen Upload — der zweite Fall ist der
   // haeufigere: der Flyer existiert meist schon.
   const [motionSource, setMotionSource] = useState<string | null>(null);
+
+  // Large reference/generated images belong in IndexedDB, not localStorage.
+  // An existing draft is never loaded automatically: reload must not repeat a
+  // paid action or silently replace newer work started in this tab.
+  const [existingDraft, setExistingDraft] = useState<SavedDraft | null>(null);
+  const [invalidDraft, setInvalidDraft] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftSaveState, setDraftSaveState] = useState<DraftSaveState>('checking');
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (demoMode) return;
+    loadDraft().then(draft => {
+      if (draft) {
+        setExistingDraft(draft);
+        setDraftSaveState('idle');
+      } else {
+        setDraftReady(true);
+        setDraftSaveState('idle');
+      }
+    }).catch((error) => {
+      const invalid = error instanceof DraftValidationError;
+      setInvalidDraft(invalid);
+      setDraftReady(!invalid);
+      setDraftSaveState('error');
+      setDraftError(invalid ? error.message : 'Lokale Entwürfe sind in diesem Browser nicht verfügbar.');
+    });
+  }, [demoMode]);
+
+  const saveCurrentDraft = useCallback(async () => {
+    if (demoMode || !draftReady) return;
+    setDraftSaveState('saving');
+    setDraftError(null);
+    try {
+      await saveDraft({ data, step: state.step, currentProjectId, motionSource });
+      setDraftSaveState('saved');
+    } catch {
+      setDraftSaveState('error');
+      setDraftError('Entwurf konnte nicht lokal gespeichert werden. Bitte Browser-Speicher prüfen.');
+    }
+  }, [data, state.step, currentProjectId, motionSource, demoMode, draftReady]);
+
+  useEffect(() => {
+    if (demoMode || !draftReady || existingDraft) return;
+    const hasDraftContent = Boolean(
+      data.verse || data.theme || data.userVision || data.referenceImage ||
+      data.metaphors.length || Object.keys(data.generatedImages).length || state.step !== 'input'
+    );
+    if (!hasDraftContent) return;
+    setDraftSaveState('saving');
+    const timeout = window.setTimeout(saveCurrentDraft, 700);
+    return () => window.clearTimeout(timeout);
+  }, [data, state.step, currentProjectId, motionSource, demoMode, draftReady, existingDraft, saveCurrentDraft]);
+
+  const restoreExistingDraft = () => {
+    if (!existingDraft) return;
+    setData({ ...existingDraft.data, editPrompts: existingDraft.data.editPrompts ?? {} });
+    setCurrentProjectId(existingDraft.currentProjectId);
+    setMotionSource(existingDraft.motionSource);
+    setState({ step: existingDraft.step, isGenerating: false, error: null });
+    setExistingDraft(null);
+    setDraftReady(true);
+    setDraftError(null);
+    setDraftSaveState('saved');
+  };
+
+  const discardExistingDraft = async () => {
+    try {
+      await deleteDraft();
+      setExistingDraft(null);
+      setInvalidDraft(false);
+      setDraftReady(true);
+      setDraftError(null);
+      setDraftSaveState('idle');
+    } catch {
+      setDraftSaveState('error');
+      setDraftError('Der alte Entwurf konnte nicht gelöscht werden.');
+    }
+  };
 
   const openMotion = (source: string | null) => {
     setMotionSource(source);
@@ -98,17 +183,6 @@ const App: React.FC = () => {
   };
 
   const clearError = () => setAppError(null);
-
-  // ─── Retry ───────────────────────────────────────────────────────────────
-
-  const handleRetry = useCallback(() => {
-    clearError();
-    if (lastActionRef.current === 'brainstorm') {
-      handleBrainstorm();
-    } else if (lastActionRef.current === 'generate') {
-      handleGenerateImage();
-    }
-  }, []);
 
   const handleAdjustPrompt = () => {
     clearError();
@@ -235,12 +309,32 @@ const App: React.FC = () => {
           result.storedUrls[key] || image,
         ]),
       );
-      setData(prev => ({ ...prev, generatedImages: displayImages, generatedImageErrors: result.errors }));
+      // A completed run replaces the previous run as one coherent result set.
+      // Otherwise a failed Story for motif B could leave motif A's old Story
+      // visible and mislabeled as part of B. If the whole request throws, this
+      // block is never reached and the previous draft remains untouched.
+      const generatedImages = Object.fromEntries(
+        Object.entries(displayImages).filter(([, image]) => Boolean(image)),
+      );
+      setData(prev => ({
+        ...prev,
+        generatedImages,
+        generatedImageErrors: result.errors,
+      }));
       setState(prev => ({ ...prev, step: 'result', isGenerating: false }));
     } catch (error: any) {
       handleError(error);
     }
   }, [data.metaphors, data.selectedMetaphorId, data.imageSize, data.selectedFormats, data.customRatio, data.styleMode, data.referenceImage, currentProjectId, demoMode]);
+
+  // Defined after both paid actions so the callback always sees their current
+  // closures. The previous empty dependency list retried the first render's
+  // stale form data.
+  const handleRetry = useCallback(() => {
+    clearError();
+    if (lastActionRef.current === 'brainstorm') handleBrainstorm();
+    else if (lastActionRef.current === 'generate') handleGenerateImage();
+  }, [handleBrainstorm, handleGenerateImage]);
 
   // ─── Render Content ──────────────────────────────────────────────────────
 
@@ -349,6 +443,13 @@ const App: React.FC = () => {
               </button>
             ) : null}
 
+            {!demoMode ? (
+              <button type="button" onClick={() => setCreditAdminOpen(true)} aria-label="Geschätzte Reserve verwalten" className="svt-press t-rail hidden min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 border border-svt-green/20 px-3 text-black/70 hover:border-black hover:text-black sm:flex">
+                <CreditCard size={12} className="text-svt-green" aria-hidden="true" />
+                <span className="hidden lg:inline">Reserve</span>
+              </button>
+            ) : null}
+
             {demoMode ? (
               <div className="t-rail flex min-h-[44px] items-center gap-2 bg-svt-green px-3 text-svt-cream">
                 <Eye size={12} aria-hidden="true" />
@@ -395,6 +496,16 @@ const App: React.FC = () => {
         </div>
       ) : null}
 
+      {!demoMode ? <CreditStatusBanner /> : null}
+      {!demoMode ? (
+        <div className="border-b border-svt-green/10 px-4 py-2 sm:hidden">
+          <button type="button" onClick={() => setCreditAdminOpen(true)} className="svt-press t-rail flex min-h-[44px] w-full items-center justify-center gap-2 border border-svt-green/20 text-black/70">
+            <CreditCard size={13} className="text-svt-green" aria-hidden="true" /> Geschätzte Reserve verwalten
+          </button>
+        </div>
+      ) : null}
+      {!demoMode ? <DraftControls existingDraft={existingDraft} invalidDraft={invalidDraft} saveState={draftSaveState} error={draftError} onSave={saveCurrentDraft} onRestore={restoreExistingDraft} onDiscard={discardExistingDraft} /> : null}
+
       {/* Main Content */}
       <main className="mx-auto flex w-full max-w-[1400px] flex-grow flex-col items-center px-4 py-12 md:px-10 md:py-20">
         {/* Structured Error Display */}
@@ -439,6 +550,7 @@ const App: React.FC = () => {
         onClose={() => setHistoryOpen(false)}
         onLoadProject={handleLoadProject}
       />
+      <CreditAdmin isOpen={creditAdminOpen} onClose={() => setCreditAdminOpen(false)} />
 
     </div>
   );

@@ -77,6 +77,7 @@ export function createDemoAppData(): AppData {
     selectedMetaphorId: DEMO_METAPHORS[0].id,
     generatedImages: createDemoImages(),
     generatedImageErrors: {},
+    editPrompts: {},
     imageSize: "1K",
     selectedFormats: {
       feed: true,

@@ -1,9 +1,9 @@
 import React from 'react';
-import { AlertTriangle, Ban, Clock, HelpCircle, Pencil, RefreshCw, ShieldAlert, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Ban, Clock, CreditCard, HelpCircle, Pencil, RefreshCw, ShieldAlert, WifiOff, X } from 'lucide-react';
 
 export interface AppError {
   message: string;
-  errorType: 'PERMISSION_DENIED' | 'RATE_LIMITED' | 'TIMEOUT' | 'CONTENT_BLOCKED' | 'MODEL_UNAVAILABLE' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'UPLOAD_INVALID' | 'UPLOAD_TOO_LARGE' | 'UNKNOWN';
+  errorType: 'PERMISSION_DENIED' | 'BILLING_REQUIRED' | 'RATE_LIMITED' | 'TIMEOUT' | 'CONTENT_BLOCKED' | 'MODEL_UNAVAILABLE' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'UPLOAD_INVALID' | 'UPLOAD_TOO_LARGE' | 'UNKNOWN';
   retryable: boolean;
 }
 
@@ -34,6 +34,7 @@ type Tone = 'block' | 'hint';
  */
 const ERROR_CONFIG: Record<AppError['errorType'], { icon: React.ReactNode; title: string; tone: Tone }> = {
   PERMISSION_DENIED: { icon: <ShieldAlert size={14} />, title: 'Zugriff verweigert', tone: 'block' },
+  BILLING_REQUIRED: { icon: <CreditCard size={14} />, title: 'KI-Guthaben aufgebraucht', tone: 'block' },
   RATE_LIMITED: { icon: <Clock size={14} />, title: 'Zu viele Anfragen', tone: 'hint' },
   TIMEOUT: { icon: <Clock size={14} />, title: 'Zeitüberschreitung', tone: 'hint' },
   CONTENT_BLOCKED: { icon: <Ban size={14} />, title: 'Inhalt blockiert', tone: 'block' },

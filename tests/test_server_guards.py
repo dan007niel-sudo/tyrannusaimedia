@@ -2,7 +2,7 @@ import base64
 import json
 import unittest
 from email.message import Message
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -106,6 +106,213 @@ class SaveImageReferenceGuardTests(unittest.TestCase):
             images={"feed": "https://example.supabase.co/storage/v1/object/public/generated-images/a.png"},
             aspectRatios={"feed": "4:5"},
         ))
+
+
+class BillingResilienceTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(server.app)
+        self.original_uncertain = server.credit_estimate_uncertain
+        self.original_runtime_confirmation = server.credit_estimate_confirmed_this_process
+
+    def tearDown(self):
+        server.credit_estimate_uncertain = self.original_uncertain
+        server.credit_estimate_confirmed_this_process = self.original_runtime_confirmation
+
+    def test_payment_required_wins_over_resource_exhausted(self):
+        error = Exception("402 RESOURCE_EXHAUSTED: Your prepayment credits are depleted")
+
+        classified = server.classify_gemini_error(error)
+        detail = json.loads(classified.detail)
+
+        self.assertEqual(classified.status_code, 402)
+        self.assertEqual(detail["errorType"], "BILLING_REQUIRED")
+        self.assertFalse(detail["retryable"])
+        self.assertIn("Guthaben", detail["message"])
+
+    def test_plain_resource_exhausted_remains_retryable_rate_limit(self):
+        classified = server.classify_gemini_error(Exception("429 RESOURCE_EXHAUSTED quota per minute"))
+        detail = json.loads(classified.detail)
+
+        self.assertEqual(classified.status_code, 429)
+        self.assertEqual(detail["errorType"], "RATE_LIMITED")
+        self.assertTrue(detail["retryable"])
+
+    def test_brainstorm_returns_non_retryable_402_without_real_provider_call(self):
+        class ProviderPaymentError(Exception):
+            status_code = 402
+
+        fake_client = MagicMock()
+        fake_client.aio.models.generate_content = AsyncMock(
+            side_effect=ProviderPaymentError("RESOURCE_EXHAUSTED")
+        )
+        with patch.object(server, "client", fake_client), \
+             patch.object(server, "reserve_credit_usage") as reserve, \
+             patch.object(server, "mark_credit_provider_result") as mark_result:
+            response = self.client.post("/api/brainstorm", json={
+                "verse": "Römer 12,2",
+                "theme": "Erneuerung",
+                "userVision": "",
+                "styleMode": "classic",
+                "referenceImage": None,
+            })
+
+        self.assertEqual(response.status_code, 402)
+        detail = json.loads(response.json()["detail"])
+        self.assertEqual(detail["errorType"], "BILLING_REQUIRED")
+        self.assertFalse(detail["retryable"])
+        reserve.assert_called_once_with("brainstorm")
+        mark_result.assert_called_once()
+        self.assertFalse(mark_result.call_args.args[0])
+
+    def test_public_credit_status_is_honestly_unknown_without_persistence(self):
+        with patch.object(server, "supabase_client", None):
+            response = self.client.get("/api/credit-status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["state"], "unknown")
+        self.assertIsNone(response.json()["estimatedReserveUsd"])
+        self.assertIn("andere Apps", response.json()["caveat"])
+
+    def test_restart_hides_persisted_numeric_estimate_until_admin_reconfirms(self):
+        fake_supabase = MagicMock()
+        fake_supabase.rpc.return_value.execute.return_value = MagicMock(data={
+            "state": "estimated", "estimatedReserveUsd": 19.0,
+            "warningThresholdUsd": 5.0, "lastConfirmedAt": "2026-10-07T12:00:00Z",
+            "staleAfterHours": 72, "reason": None,
+        })
+        server.credit_estimate_confirmed_this_process = False
+        with patch.object(server, "supabase_client", fake_supabase):
+            status = server.get_credit_estimate(expose_amounts=True)
+
+        self.assertEqual(status["state"], "unknown")
+        self.assertEqual(status["reason"], "requires_runtime_confirmation")
+        self.assertIsNone(status["estimatedReserveUsd"])
+
+    def test_public_credit_status_never_exposes_balance_amounts(self):
+        fake_supabase = MagicMock()
+        fake_supabase.rpc.return_value.execute.return_value = MagicMock(data={
+            "state": "warning", "estimatedReserveUsd": 2.0,
+            "warningThresholdUsd": 5.0, "lastConfirmedAt": "2026-10-07T12:00:00Z",
+            "staleAfterHours": 72, "reason": None,
+        })
+        server.credit_estimate_confirmed_this_process = True
+        with patch.object(server, "supabase_client", fake_supabase):
+            response = self.client.get("/api/credit-status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["state"], "warning")
+        self.assertIsNone(response.json()["estimatedReserveUsd"])
+        self.assertIsNone(response.json()["warningThresholdUsd"])
+        self.assertIsNone(response.json()["lastConfirmedAt"])
+
+    def test_all_image_billing_failures_return_402(self):
+        with patch.object(
+            server, "_generate_single_image",
+            new=AsyncMock(side_effect=Exception("402 prepayment credits are depleted")),
+        ), patch.object(server, "supabase_client", None), patch.object(server, "client", MagicMock()):
+            response = self.client.post("/api/generate-images", json={
+                "metaphorPrompt": "visual",
+                "imageSize": "1K",
+                "requests": [{"key": "feed", "ratio": "4:5"}],
+            })
+
+        self.assertEqual(response.status_code, 402)
+        detail = json.loads(response.json()["detail"])
+        self.assertEqual(detail["errorType"], "BILLING_REQUIRED")
+        self.assertFalse(detail["retryable"])
+
+    def test_partial_image_billing_failure_keeps_success_and_detail(self):
+        async def generate(_prompt, _size, ratio, _style, _reference):
+            if ratio == "9:16":
+                raise Exception("402 prepayment credits are depleted")
+            return data_uri("image/png", b"successful-image")
+
+        with patch.object(server, "_generate_single_image", new=generate), \
+             patch.object(server, "supabase_client", None), \
+             patch.object(server, "client", MagicMock()):
+            response = self.client.post("/api/generate-images", json={
+                "metaphorPrompt": "visual",
+                "imageSize": "1K",
+                "requests": [
+                    {"key": "feed", "ratio": "4:5"},
+                    {"key": "story", "ratio": "9:16"},
+                ],
+            })
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["images"]["feed"].startswith("data:image/png"))
+        self.assertIsNone(body["images"]["story"])
+        self.assertEqual(body["errors"]["story"]["errorType"], "BILLING_REQUIRED")
+        self.assertFalse(body["errors"]["story"]["retryable"])
+
+    def test_admin_credit_update_uses_token_and_atomic_rpc(self):
+        fake_supabase = MagicMock()
+        confirm_result = MagicMock(data=None)
+        estimate_result = MagicMock(data={
+            "state": "estimated", "estimatedReserveUsd": 19.0,
+            "warningThresholdUsd": 5.0, "lastConfirmedAt": "2026-10-07T12:00:00Z",
+            "staleAfterHours": 72, "reason": None,
+        })
+        fake_supabase.rpc.return_value.execute.side_effect = [confirm_result, estimate_result]
+        payload = {
+            "confirmedBalanceUsd": 20,
+            "warningThresholdUsd": 5,
+            "brainstormAllowanceUsd": 0.01,
+            "image1kAllowanceUsd": 0.10,
+            "image2kAllowanceUsd": 0.15,
+            "image4kAllowanceUsd": 0.20,
+            "editAllowanceUsd": 0.15,
+            "staleAfterHours": 72,
+        }
+        with patch.object(server, "HISTORY_ADMIN_TOKEN", "secret"), \
+             patch.object(server, "supabase_client", fake_supabase):
+            rejected = self.client.put("/api/admin/credit-estimate", json=payload)
+            accepted = self.client.put(
+                "/api/admin/credit-estimate", json=payload,
+                headers={"X-History-Token": "secret"},
+            )
+
+        self.assertEqual(rejected.status_code, 401)
+        self.assertEqual(accepted.status_code, 200)
+        self.assertTrue(accepted.json()["saved"])
+        self.assertEqual(accepted.json()["status"]["estimatedReserveUsd"], 19.0)
+        first_rpc = fake_supabase.rpc.call_args_list[0]
+        self.assertEqual(first_rpc.args[0], "confirm_credit_estimate")
+
+    def test_credit_reservation_and_settlement_use_durable_event_id(self):
+        fake_supabase = MagicMock()
+        fake_supabase.rpc.return_value.execute.return_value = MagicMock(
+            data={"reservationId": "12345678-1234-5678-1234-567812345678"}
+        )
+        with patch.object(server, "supabase_client", fake_supabase):
+            reservation_id = server.reserve_credit_usage("image", "2K")
+            server.finish_credit_usage(reservation_id, "uncertain")
+
+        self.assertEqual(reservation_id, "12345678-1234-5678-1234-567812345678")
+        self.assertEqual(fake_supabase.rpc.call_args_list[0].args[0], "reserve_credit_usage")
+        self.assertEqual(fake_supabase.rpc.call_args_list[1].args[0], "finish_credit_usage")
+
+    def test_admin_confirmation_rejects_inflight_provider_calls(self):
+        fake_supabase = MagicMock()
+        fake_supabase.rpc.return_value.execute.side_effect = Exception("credit_calls_in_flight")
+        payload = {
+            "confirmedBalanceUsd": 20, "warningThresholdUsd": 5,
+            "brainstormAllowanceUsd": 0.01, "image1kAllowanceUsd": 0.10,
+            "image2kAllowanceUsd": 0.15, "image4kAllowanceUsd": 0.20,
+            "editAllowanceUsd": 0.15, "staleAfterHours": 72,
+        }
+        with patch.object(server, "HISTORY_ADMIN_TOKEN", "secret"), \
+             patch.object(server, "supabase_client", fake_supabase):
+            response = self.client.put(
+                "/api/admin/credit-estimate", json=payload,
+                headers={"X-History-Token": "secret"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        detail = json.loads(response.json()["detail"])
+        self.assertTrue(detail["retryable"])
+        self.assertIn("KI-Anfragen", detail["message"])
 
 
 class HistoryAuthTests(unittest.TestCase):
